@@ -80,6 +80,10 @@ public sealed class AppSession
 
     public Course? Course(CourseKey key) => Index?.Course(key);
 
+    /// <summary>Every term kept in memory, newest code first, for NUpath lookups.</summary>
+    public IReadOnlyList<CatalogIndex> IndexesNewestFirst() =>
+        _indexes.Values.OrderByDescending(index => index.Term.Code, StringComparer.Ordinal).ToList();
+
     /// <summary>
     /// Replaces one course's sections with a live Banner response and rebuilds the lookup tables.
     /// Seat counts, schedules, and rooms then see the same sections.

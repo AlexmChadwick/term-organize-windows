@@ -20,11 +20,10 @@ public sealed class SearchPage : UserControl
     private readonly Button _campus = new() { Content = "Campus" };
     private readonly Button _all = new() { Content = "All filters" };
     private readonly Button _clear = new() { Content = "Clear", Visibility = Visibility.Collapsed };
-    private readonly ListView _results = new();
+    private readonly SortableTable _results = new();
     private readonly StackPanel _detail = new() { Spacing = 8 };
     private readonly SearchFilters _filters = new();
     private bool _filling;
-    private bool _liveRefresh;
     private SearchResponse? _response;
 
     public SearchPage(AppSession session)
@@ -65,7 +64,8 @@ public sealed class SearchPage : UserControl
         _honors.Checked += (_, _) => Apply();
         _honors.Unchecked += (_, _) => Apply();
         _days.SelectionChanged += (_, _) => { if (!_filling) Apply(); };
-        _results.SelectionChanged += (_, _) => { if (_results.SelectedItem is ResultRow row) ShowCourse(row.Key); };
+        _results.RowChosen += tag => { if (tag is CourseKey key) ShowCourse(key); };
+        _results.RowOpened += tag => { if (tag is CourseKey key) CourseWindow.Open(_session, key); };
         if (_session.Store.Preferences.PreferredCampus is string campus && campus.Length > 0)
             _filters.Campuses.Add(campus);
         BuildMenus();
@@ -85,14 +85,20 @@ public sealed class SearchPage : UserControl
         }
         ReadQuickFilters();
         _response = SearchEngine.Search(text, index, _filters);
-        _results.Items.Clear();
-        foreach (var result in _response.Results.Take(80))
-            _results.Items.Add(new ResultRow(result));
+        var savedAt = new Dictionary<CourseKey, DateTimeOffset>();
+        foreach (var item in _session.Store.SavedCourses(index.Term.Code)) savedAt[item.Key] = item.SavedAt;
+        var rows = new List<SortableTable.Row>();
+        foreach (var result in _response.Results.Take(200))
+        {
+            var saved = savedAt.TryGetValue(result.Course.Key, out var when);
+            rows.Add(CourseTable.Make(result, saved, saved ? when : null));
+        }
+        _results.Show(CourseTable.Columns, rows);
         _clear.Visibility = _filters.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
         if (_response.CrnMatch is CourseSection section)
             ShowCourse(section.CourseKey);
-        else if (_results.Items.Count > 0)
-            _results.SelectedIndex = 0;
+        else if (rows.Count > 0)
+            ShowCourse((CourseKey)rows[0].Tag);
         else if (text.Trim().Length > 0)
             Chrome.Fill(_detail, "No matches", "Try a course code, a nickname like orgo or linalg, or a professor\u2019s last name.");
         else
@@ -100,53 +106,7 @@ public sealed class SearchPage : UserControl
         if (text.Trim().Length >= 2) _session.Store.RecordSearch(text);
     }
 
-    public void ShowCourse(CourseKey key)
-    {
-        var index = _session.Index;
-        var course = index?.Course(key);
-        if (index is null || course is null)
-        {
-            Chrome.Fill(_detail, key.ToString(), "That course is not in this term\u2019s catalog.");
-            return;
-        }
-        _session.Store.RecordView(key, index.Term.Code);
-        var stats = index.Stats(key);
-        _detail.Children.Clear();
-        _detail.Children.Add(Chrome.Heading($"{course.Code}  {course.Title}"));
-        _detail.Children.Add(Chrome.Body($"{course.CreditsLabel} \u00b7 {stats.AvailabilityLabel} \u00b7 {stats.SeatsRemaining} seats left"));
-        if (!string.IsNullOrWhiteSpace(course.Description))
-            _detail.Children.Add(Chrome.Body(course.Description));
-        if (RequisiteTreeView.Build(course.Prereqs, _session, "Prerequisites") is UIElement prereq)
-            _detail.Children.Add(prereq);
-        if (RequisiteTreeView.Build(course.Coreqs, _session, "Corequisites") is UIElement coreq)
-            _detail.Children.Add(coreq);
-        var standing = CourseDegreePlanStandingLookup.For(_session.Store, key);
-        if (standing is not null) _detail.Children.Add(Chrome.Body(standing.Text));
-
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var save = new Button { Content = _session.Store.IsSaved(key, index.Term.Code) ? "Saved" : "Save" };
-        save.Click += (_, _) =>
-        {
-            _session.Store.ToggleSaved(key, index.Term.Code);
-            save.Content = _session.Store.IsSaved(key, index.Term.Code) ? "Saved" : "Save";
-        };
-        var add = new Button { Content = "Add to schedule" };
-        add.Click += (_, _) =>
-        {
-            var plan = _session.Store.PrimaryPlan(index.Term.Code) ?? _session.Store.CreatePlan("Schedule", index.Term.Code);
-            _session.Store.AddCourse(key, plan.Id);
-        };
-        var refresh = new Button { Content = "Refresh seats" };
-        refresh.Click += async (_, _) => await RefreshAsync(course, index.Term.Code);
-        actions.Children.Add(save);
-        actions.Children.Add(add);
-        actions.Children.Add(refresh);
-        _detail.Children.Add(actions);
-        foreach (var section in index.Sections(key))
-            _detail.Children.Add(SectionCard(section, course.Title, index.Term.Code));
-        if (!_liveRefresh && _session.Store.Preferences.AutoRefreshSeats)
-            _ = RefreshAsync(course, index.Term.Code);
-    }
+    public void ShowCourse(CourseKey key) => CourseDetail.Show(_detail, _session, key, inWindow: false);
 
     private void Apply() => Run(_query.Text);
 
@@ -306,44 +266,6 @@ public sealed class SearchPage : UserControl
         return box;
     }
 
-    private async Task RefreshAsync(Course course, string term)
-    {
-        _liveRefresh = true;
-        try
-        {
-            var live = await BannerClient.Shared.FetchSectionsAsync(term, [course.Key]);
-            if (live.TryGetValue(course.Key, out var banner))
-            {
-                _session.RefreshCourse(course.Key, banner);
-                ShowCourse(course.Key);
-            }
-        }
-        catch (Exception ex)
-        {
-            _detail.Children.Insert(0, Chrome.Body("Banner didn\u2019t answer: " + ex.Message));
-        }
-        finally
-        {
-            _liveRefresh = false;
-        }
-    }
-
-    private Border SectionCard(CourseSection section, string title, string term)
-    {
-        var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock { Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        panel.Children.Add(Chrome.Body($"{section.ScheduleSummary} \u00b7 {section.InstructorLabel} \u00b7 {section.Campus}"));
-        panel.Children.Add(Chrome.Body($"{section.SeatsLabel}" + (section.HasWaitlist ? $" \u00b7 waitlist {section.WaitlistRemaining}" : "")));
-        var watch = new Button { Content = _session.Store.IsWatching(section.Crn, term) ? "Watching" : "Watch seats", HorizontalAlignment = HorizontalAlignment.Left };
-        watch.Click += (_, _) =>
-        {
-            _session.Store.ToggleWatch(section, title, term);
-            watch.Content = _session.Store.IsWatching(section.Crn, term) ? "Watching" : "Watch seats";
-        };
-        panel.Children.Add(watch);
-        return Chrome.Card(panel);
-    }
-
     private void ShowEmpty()
     {
         if (_session.Index is null)
@@ -379,15 +301,4 @@ public sealed class SearchPage : UserControl
         public override string ToString() => Filter.Label();
     }
 
-    private sealed class ResultRow
-    {
-        public CourseKey Key { get; }
-        private readonly string _label;
-        public ResultRow(SearchResult result)
-        {
-            Key = result.Course.Key;
-            _label = $"{result.Course.Code}  {result.Course.Title}  \u00b7  {result.Stats.AvailabilityLabel}";
-        }
-        public override string ToString() => _label;
-    }
 }

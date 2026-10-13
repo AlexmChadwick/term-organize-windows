@@ -36,6 +36,7 @@ public sealed class SchedulesPage : UserControl
         bar.Children.Add(Button("Ideal week\u2026", (_, _) => _ = SurveyAsync()));
         bar.Children.Add(Button("Copy CRNs", (_, _) => CopyCrns()));
         bar.Children.Add(Button("Export .ics", (_, _) => ExportIcs()));
+        bar.Children.Add(Button("Print", (_, _) => Print(WinRT.Interop.WindowNative.GetWindowHandle(_window))));
         bar.Children.Add(Button("Export image", (_, _) => ExportImage()));
         bar.Children.Add(Button("Add to Windows Calendar", (_, _) => _ = AddToCalendarAsync()));
         var filterScroll = new ScrollViewer
@@ -63,6 +64,22 @@ public sealed class SchedulesPage : UserControl
         Padding = new Thickness(12);
         _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         ReloadPlans();
+    }
+
+    public void Print(nint owner)
+    {
+        if (_plan is null)
+        {
+            _window.SetStatus("Open a schedule, then press Ctrl+P.");
+            return;
+        }
+        var lines = new List<string> { _plan.Name };
+        if (_session.Term is not null) lines.Add(_session.Term.Name);
+        foreach (var section in SelectedSections())
+            lines.Add($"{section.CourseKey} {section.SectionNumber} \u00b7 CRN {section.Crn} \u00b7 {section.ScheduleSummary} \u00b7 {section.SeatsLabel}");
+        if (lines.Count <= 2) lines.Add("No sections are on the calendar.");
+        if (NativePrint.Show(owner, _plan.Name, lines)) _window.SetStatus("Sent the schedule to the printer.");
+        else _window.SetStatus("Print was canceled.");
     }
 
     public void ExportIcs()

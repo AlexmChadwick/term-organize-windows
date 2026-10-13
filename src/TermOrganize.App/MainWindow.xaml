@@ -32,7 +32,7 @@
                 <MenuFlyoutItem Text="New Degree Plan" Click="MenuNewDegree" />
                 <MenuFlyoutItem Text="Import Degree Plan…" Click="MenuImport" />
                 <MenuFlyoutItem Text="Export" Click="MenuExport" />
-                <MenuFlyoutItem Text="Print Degree Plan" Click="MenuPrint" />
+                <MenuFlyoutItem Text="Print…" Click="MenuPrint" />
             </MenuBarItem>
             <MenuBarItem Title="View">
                 <MenuFlyoutItem Text="Search" Click="MenuSearch" />

@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
         Show("search");
         if (App.Session.Index is not null || App.Session.Error is not null) Show("search");
         _ = LoadTermsAsync();
+        ScheduleWelcome();
     }
 
     public void HandleActivation(AppActivationArguments args)
@@ -354,8 +355,119 @@ public sealed partial class MainWindow : Window
 
     private void Print()
     {
-        if (Host.Children.FirstOrDefault() is DegreePage degree) degree.ExportPdf(open: true);
-        else SetStatus("Open a degree plan and press Ctrl+P to print its View Plan PDF.");
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        switch (Host.Children.FirstOrDefault())
+        {
+            case DegreePage degree:
+                degree.Print(hwnd);
+                break;
+            case WatchPage watch:
+                watch.Print(hwnd);
+                break;
+            case SchedulesPage schedules:
+                schedules.Print(hwnd);
+                break;
+            default:
+                SetStatus("Open a degree plan, a schedule, or the watchlist, then press Ctrl+P.");
+                break;
+        }
+    }
+
+    private bool _welcomeOpen;
+
+    private void ScheduleWelcome()
+    {
+        if (App.Session.Store.Preferences.HasCompletedOnboarding) return;
+        if (Content is not FrameworkElement root)
+        {
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, ScheduleWelcome);
+            return;
+        }
+        if (root.XamlRoot is null)
+            root.Loaded += WelcomeLoaded;
+        else
+            _ = ShowWelcomeAsync();
+    }
+
+    private void WelcomeLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement root) root.Loaded -= WelcomeLoaded;
+        if (Content is FrameworkElement element && element.XamlRoot is null)
+        {
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _ = ShowWelcomeAsync());
+            return;
+        }
+        _ = ShowWelcomeAsync();
+    }
+
+    private async Task ShowWelcomeAsync()
+    {
+        if (_welcomeOpen || App.Session.Store.Preferences.HasCompletedOnboarding) return;
+        if (Content is not FrameworkElement root || root.XamlRoot is null) return;
+        _welcomeOpen = true;
+        var panel = new StackPanel { Spacing = 14, MaxWidth = 460 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Northeastern courses, on your PC.",
+            FontSize = 16,
+            Opacity = 0.8,
+        });
+        panel.Children.Add(WelcomeFeature("Search every class", "Find courses by code, title, professor, or CRN, with live seats."));
+        panel.Children.Add(WelcomeFeature("Build your schedule", "Generate conflict-free schedules and export them to Calendar."));
+        panel.Children.Add(WelcomeFeature("Plan your degree", "Import your degree audit plan and check it against the requirements."));
+        panel.Children.Add(WelcomeFeature("Get seat alerts", "Watch full sections and get notified when seats open."));
+        panel.Children.Add(WelcomeFeature("Find a free room", "See which classrooms are empty right now."));
+        ComboBox? campus = null;
+        var names = App.Session.Index?.CampusNames ?? [];
+        if (names.Count > 1)
+        {
+            campus = new ComboBox { Header = "Where do you take classes?", HorizontalAlignment = HorizontalAlignment.Stretch };
+            campus.Items.Add("No preference");
+            foreach (var name in names.Take(10)) campus.Items.Add(name);
+            var saved = App.Session.Store.Preferences.PreferredCampus;
+            campus.SelectedItem = saved is not null && campus.Items.Contains(saved) ? saved : "No preference";
+            panel.Children.Add(campus);
+            panel.Children.Add(Chrome.Body("Searches start with this campus selected. You can change it any time in Settings."));
+        }
+        panel.Children.Add(Chrome.Body("Everything stays on your PC. No accounts, no analytics, no tracking."));
+        panel.Children.Add(Chrome.Body("Unofficial: not affiliated with Northeastern University or Sandbox. Based on SearchNEU by Sandbox at Northeastern University, free software under the " + LegalText.LicenseName + "."));
+        var about = new Button { Content = "About & Licenses\u2026", HorizontalAlignment = HorizontalAlignment.Left };
+        panel.Children.Add(about);
+        var dialog = new ContentDialog
+        {
+            Title = "Welcome to Term Organize",
+            PrimaryButtonText = "Continue",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root.XamlRoot,
+            Content = new ScrollViewer { Content = panel, MaxHeight = 520 },
+        };
+        about.Click += (_, _) =>
+        {
+            dialog.Hide();
+            Select("settings");
+        };
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        catch (Exception)
+        {
+            _welcomeOpen = false;
+            return;
+        }
+        var prefs = App.Session.Store.Preferences;
+        prefs.HasCompletedOnboarding = true;
+        if (campus?.SelectedItem is string chosen && chosen != "No preference")
+            prefs.PreferredCampus = chosen;
+        App.Session.Store.ReplacePreferences(prefs);
+    }
+
+    private static StackPanel WelcomeFeature(string title, string message)
+    {
+        var block = new StackPanel { Spacing = 2 };
+        block.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        block.Children.Add(Chrome.Body(message));
+        return block;
     }
 
     private void ShowWindow(object sender, RoutedEventArgs e)
@@ -376,33 +488,7 @@ public sealed partial class MainWindow : Window
     public void RefreshUpNext()
     {
         var session = App.Session;
-        var term = session.Term;
-        var plan = term is null ? null : session.Store.PrimaryPlan(term.Code);
-        if (session.Index is null || plan is null || term is null)
-        {
-            UpNextText.Text = "No class on the calendar yet. Pick sections in a schedule.";
-            return;
-        }
-        var now = DateTime.Now;
-        var minutes = now.Hour * 60 + now.Minute;
-        var today = (int)now.DayOfWeek;
-        string? next = null;
-        var best = int.MaxValue;
-        foreach (var crn in plan.SelectedCRNs)
-        {
-            var section = session.Index.Section(crn);
-            if (section is null) continue;
-            foreach (var meeting in section.WeeklyMeetings)
-            {
-                if (meeting.Start is not int start || !meeting.Days.Contains(today)) continue;
-                var delta = start >= minutes - 60 ? start - minutes : start + 24 * 60 - minutes;
-                if (delta < best)
-                {
-                    best = delta;
-                    next = $"{section.CourseKey} · {meeting.Days.CompactLabel} {meeting.TimeLabel} · {meeting.LocationLabel}";
-                }
-            }
-        }
-        UpNextText.Text = next ?? "Nothing else today. The tray flyout is Up Next.";
+        var line = UpNextLines.Current(session.Store, session.Index, DateTime.Now);
+        UpNextText.Text = line == "Nothing else today." ? "Nothing else today. The tray flyout is Up Next." : line;
     }
 }

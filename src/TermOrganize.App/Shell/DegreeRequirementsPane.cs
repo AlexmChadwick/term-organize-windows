@@ -93,8 +93,15 @@ internal sealed class DegreeRequirementsPane : UserControl
         try
         {
             var repository = new CourseAttributeRepository();
-            var indexes = _session.Index is null ? Array.Empty<CatalogIndex>() : new[] { _session.Index };
-            var lookups = await repository.LookupAsync(_plan.AllCourseKeys(), indexes);
+            var keys = new List<CourseKey>();
+            var seen = new HashSet<CourseKey>();
+            foreach (var key in _plan.AllCourseKeys())
+            {
+                if (seen.Add(key)) keys.Add(key);
+                foreach (var other in _plan.DeclaredEquivalences.GroupOf(key))
+                    if (seen.Add(other)) keys.Add(other);
+            }
+            var lookups = await repository.LookupAsync(keys, _session.IndexesNewestFirst());
             if (generation != _generation || _plan is null) return;
             var pairs = new List<KeyValuePair<CourseKey, IEnumerable<NUPath>>>();
             foreach (var (key, lookup) in lookups)

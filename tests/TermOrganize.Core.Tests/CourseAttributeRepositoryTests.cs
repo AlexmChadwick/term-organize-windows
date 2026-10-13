@@ -95,9 +95,27 @@ public class CourseAttributeRepositoryTests
         }
     }
 
+    [Fact]
+    public void FromLoadedWalksIndexesNewestFirstAndReadsSectionAttributes()
+    {
+        var older = Loaded("202610", "NCEI");
+        var newer = Loaded("202710", "NCW1");
+        var key = Key("ENGW 1111");
+        Assert.Equal(CourseAttributeRepository.Lookup.FoundCodes(["NCW1"], "202710"), CourseAttributeRepository.FromLoaded(key, [newer, older]));
+        Assert.Equal(CourseAttributeRepository.Lookup.FoundCodes(["NCEI"], "202610"), CourseAttributeRepository.FromLoaded(key, [older]));
+
+        var bare = Loaded("202710", "NCW1", courseAttributes: []);
+        Assert.Equal(
+            CourseAttributeRepository.Lookup.FoundCodes(["NCW1"], "202710"),
+            CourseAttributeRepository.FromLoaded(key, [bare]));
+        Assert.Null(CourseAttributeRepository.FromLoaded(Key("CS 2500"), [newer]));
+    }
+
     private static CourseKey Key(string code) => CourseKey.Parse(code)!.Value;
 
-    private static CatalogIndex Loaded()
+    private static CatalogIndex Loaded() => Loaded("202710", "NCW1");
+
+    private static CatalogIndex Loaded(string term, string sectionAttribute, IReadOnlyList<string>? courseAttributes = null)
     {
         var key = Key("ENGW 1111");
         var course = new Course
@@ -107,7 +125,7 @@ public class CourseAttributeRepositoryTests
             Title = "First-Year Writing",
             MinCredits = 4,
             MaxCredits = 4,
-            Attributes = ["NCW1"],
+            Attributes = courseAttributes?.ToList() ?? [sectionAttribute],
             DetailsLoaded = true,
         };
         var section = new CourseSection
@@ -124,11 +142,11 @@ public class CourseAttributeRepositoryTests
             ClassType = "Lecture",
             Campus = "Boston",
             InstructionMethod = "Traditional",
-            Attributes = ["NCW1"],
+            Attributes = [sectionAttribute, BannerAttributes.Honors],
         };
         return CatalogIndex.Build(new TermCatalog
         {
-            Term = new Term("202710", "Fall 2026 Semester"),
+            Term = new Term(term, term == "202610" ? "Spring 2026 Semester" : "Fall 2026 Semester"),
             Courses = [course],
             Sections = [section],
         });

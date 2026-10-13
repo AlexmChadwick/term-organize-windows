@@ -66,84 +66,67 @@ public sealed class SavedPage : UserControl
 
 public sealed class ProfessorsPage : UserControl
 {
+    private readonly AppSession _session;
+    private readonly TextBox _query = new() { PlaceholderText = "Search professors" };
+    private readonly SortableTable _table = new();
+    private readonly TextBlock _count = new() { Opacity = 0.75 };
+    private List<ProfessorDirectoryEntry> _entries = [];
+
     public ProfessorsPage(AppSession session)
     {
-        var query = new TextBox { PlaceholderText = "Search professors" };
-        var list = new ListView();
-        var detail = new StackPanel { Spacing = 6 };
-        var left = new StackPanel { Spacing = 8 };
-        left.Children.Add(query);
-        left.Children.Add(list);
-        Content = SubjectsPage.Split(left, new ScrollViewer { Content = detail, Padding = new Thickness(16, 0, 0, 0) });
-        Padding = new Thickness(12);
+        _session = session;
+        var root = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.Children.Add(Chrome.Heading("Professors"));
+        Grid.SetRow(_query, 1);
+        root.Children.Add(_query);
+        Grid.SetRow(_count, 2);
+        root.Children.Add(_count);
+        Grid.SetRow(_table, 3);
+        root.Children.Add(_table);
+        Content = root;
         if (session.Index is null)
         {
-            Chrome.Fill(detail, "Professors", session.Error ?? "The catalog is still loading.");
+            _count.Text = session.Error ?? "The catalog is still loading.";
             return;
         }
-        var entries = ProfessorDirectoryEntry.Build(session.Index);
-        void Show(string text)
+        _entries = ProfessorDirectoryEntry.Build(session.Index);
+        _query.TextChanged += (_, _) => Show(_query.Text);
+        _table.RowOpened += tag =>
         {
-            list.Items.Clear();
-            var folded = text.Trim().ToLowerInvariant();
-            foreach (var entry in entries.Where(item => folded.Length == 0 || item.SearchText.Contains(folded, StringComparison.Ordinal)).Take(80))
-                list.Items.Add(new ProfessorRow(entry));
-        }
-        query.TextChanged += (_, _) => Show(query.Text);
-        list.SelectionChanged += (_, _) =>
-        {
-            if (list.SelectedItem is not ProfessorRow row || session.Index is null) return;
-            var entry = row.Entry;
-            detail.Children.Clear();
-            detail.Children.Add(Chrome.Heading(entry.DisplayName));
-            detail.Children.Add(Chrome.Body(entry.CourseSummary));
-            var summary = session.Index.Instructor(entry.Id);
-            if (summary is null) return;
-            foreach (var section in ProfessorPage.Sections(summary, session.Index))
-                detail.Children.Add(Chrome.Body($"{section.CourseKey} {section.SectionNumber} · {section.ScheduleSummary} · {section.SeatsLabel}"));
+            if (tag is ProfessorDirectoryEntry entry) ProfessorWindow.Open(_session, entry);
         };
+        _count.Text = "Double-click a name to open their sections and week.";
         Show("");
     }
 
-    private sealed class ProfessorRow(ProfessorDirectoryEntry entry)
+    private void Show(string text)
     {
-        public ProfessorDirectoryEntry Entry { get; } = entry;
-        public override string ToString() => $"{Entry.DisplayName}  ·  {Entry.CourseSummary}";
-    }
-}
-
-public sealed class RoomsPage : UserControl
-{
-    public RoomsPage(AppSession session)
-    {
-        var panel = new StackPanel { Spacing = 8, Padding = new Thickness(12) };
-        Content = new ScrollViewer { Content = panel };
-        panel.Children.Add(Chrome.Heading("Free rooms"));
-        if (session.Index is not CatalogIndex index)
+        var folded = ProfessorDirectoryEntry.Fold(text);
+        var matches = _entries.Where(entry => folded.Length == 0 || entry.SearchText.Contains(folded, StringComparison.Ordinal)).Take(300).ToList();
+        var index = _session.Index;
+        var rows = matches.Select(entry =>
         {
-            panel.Children.Add(Chrome.Body(session.Error ?? "The catalog is still loading."));
-            return;
-        }
-        var moment = RoomAvailability.Moment.From(DateTime.Now);
-        var preferred = session.Store.Preferences.PreferredCampus;
-        panel.Children.Add(Chrome.Body(preferred is null
-            ? "Rooms with no class at " + moment.Label + "."
-            : "Rooms with no class at " + moment.Label + " on " + preferred + "."));
-        var buildings = RoomAvailability.Of(index.Buildings.Where(building =>
-            preferred is null
-            || string.Equals(building.CampusCode, preferred, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(index.CampusName(building.CampusCode), preferred, StringComparison.OrdinalIgnoreCase)), moment);
-        var shown = 0;
-        foreach (var building in RoomAvailability.Sorted(buildings, RoomAvailability.BuildingSort.MostFree).Take(12))
-        {
-            if (building.Free.Count == 0) continue;
-            var body = new StackPanel { Spacing = 2 };
-            body.Children.Add(new TextBlock { Text = $"{building.Building.Name} · {building.FreeCount} free", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            foreach (var room in building.Free.Take(8))
-                body.Children.Add(Chrome.Body(room.Room.Label));
-            panel.Children.Add(Chrome.Card(body));
-            if (++shown == 8) break;
-        }
-        if (shown == 0) panel.Children.Add(Chrome.Body("No free classrooms at this minute. Try again between classes."));
+            var email = index?.Instructor(entry.Id)?.Email;
+            return new SortableTable.Row
+            {
+                Tag = entry,
+                Cells = [entry.DisplayName, entry.CourseSummary, entry.SectionCount.ToString(), string.IsNullOrWhiteSpace(email) ? "\u2014" : email],
+                Sort = [null, null, entry.SectionCount, null],
+            };
+        }).ToList();
+        _table.Show(
+        [
+            new() { Title = "Name", Width = 220 },
+            new() { Title = "Courses", Width = 260 },
+            new() { Title = "Sections", Width = 90, Numeric = true },
+            new() { Title = "Email", Width = 220 },
+        ], rows);
+        _count.Text = matches.Count == 0
+            ? "No professors match."
+            : $"{matches.Count:N0} professors \u00b7 double-click a name to open their window.";
     }
 }

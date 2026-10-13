@@ -67,8 +67,45 @@
             <com:ExeServer Executable="TermOrganize.App.exe" Arguments="-RegisterForBGTaskServer" DisplayName="Term Organize seat check" LaunchAndActivationPermission="O:PSG:BUD:(A;;11;;;IU)(A;;11;;;S-1-15-2-1)S:(ML;;NX;;;LW)">
               <com:Class Id="A7C3E1B2-4D58-4F0A-9B16-2E8D5C7A91F4" DisplayName="Term Organize seat check" />
             </com:ExeServer>
+            <com:ExeServer Executable="TermOrganize.App.exe" Arguments="-RegisterWidgetProvider" DisplayName="Term Organize Up Next" LaunchAndActivationPermission="O:PSG:BUD:(A;;11;;;IU)(A;;11;;;S-1-15-2-1)S:(ML;;NX;;;LW)">
+              <com:Class Id="B4E8C1A7-6F32-4D19-8A55-3C9E1D70B2F6" DisplayName="Term Organize Up Next" />
+            </com:ExeServer>
           </com:ComServer>
         </com:Extension>
+        <uap3:Extension Category="windows.appExtension">
+          <uap3:AppExtension Name="com.microsoft.windows.widgets" DisplayName="Term Organize" Id="TermOrganizeWidgets" Description="Up Next from the primary schedule.">
+            <uap3:Properties>
+              <WidgetProvider>
+                <ProviderIcons>
+                  <Icon Path="Assets\Square44x44Logo.png" />
+                </ProviderIcons>
+                <Activation>
+                  <CreateInstance ClassId="B4E8C1A7-6F32-4D19-8A55-3C9E1D70B2F6" />
+                </Activation>
+                <Definitions>
+                  <Definition Id="UpNext" DisplayName="Up Next" Description="The next class on your primary schedule." AllowMultiple="false">
+                    <Capabilities>
+                      <Capability>
+                        <Size Name="medium" />
+                      </Capability>
+                      <Capability>
+                        <Size Name="small" />
+                      </Capability>
+                    </Capabilities>
+                    <ThemeResources>
+                      <Icons>
+                        <Icon Path="Assets\Square44x44Logo.png" />
+                      </Icons>
+                      <Screenshots>
+                        <Screenshot Path="Assets\Square150x150Logo.png" DisplayAltText="Up Next" />
+                      </Screenshots>
+                    </ThemeResources>
+                  </Definition>
+                </Definitions>
+              </WidgetProvider>
+            </uap3:Properties>
+          </uap3:AppExtension>
+        </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>

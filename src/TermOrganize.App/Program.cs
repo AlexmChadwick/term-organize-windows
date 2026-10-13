@@ -27,6 +27,12 @@ public static class Program
             SeatBackgroundServer.RegisterAndPump();
             return;
         }
+        if (Has(args, "-RegisterWidgetProvider"))
+        {
+            UnpackagedBootstrap.Try();
+            UpNextWidgetHost.RegisterAndPump();
+            return;
+        }
         UnpackagedBootstrap.Try();
         Application.Start(_ =>
         {

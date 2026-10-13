@@ -8,31 +8,6 @@ using Windows.Storage.Pickers;
 
 namespace TermOrganize;
 
-public sealed class WatchPage : UserControl
-{
-    public WatchPage(AppSession session, MainWindow window)
-    {
-        var panel = new StackPanel { Spacing = 8, Padding = new Thickness(12) };
-        Content = new ScrollViewer { Content = panel };
-        panel.Children.Add(Chrome.Heading("Watchlist"));
-        panel.Children.Add(Chrome.Body("A seat alert fires when a full section you are watching gains a seat, or a full waitlist gains a spot."));
-        var check = new Button { Content = "Check now", HorizontalAlignment = HorizontalAlignment.Left };
-        check.Click += (_, _) => PlatformServices.CheckSeats(session, window);
-        panel.Children.Add(check);
-        if (session.Store.Watchlist.Count == 0)
-        {
-            panel.Children.Add(Chrome.Body("Watch a section from its course page. With automatic checking on, Term Organize keeps looking after you quit, and a toast appears when a seat opens."));
-            return;
-        }
-        foreach (var item in session.Store.Watchlist)
-        {
-            var text = $"{item.CourseKey} \u00b7 CRN {item.Crn} \u00b7 {item.LastSeatsRemaining} seats";
-            if (item.LastCheckedAt is DateTimeOffset at) text += " \u00b7 checked " + at.ToLocalTime().ToString("g");
-            panel.Children.Add(Chrome.Card(Chrome.Body(text)));
-        }
-    }
-}
-
 public sealed class SettingsPage : UserControl
 {
     private readonly AppSession _session;

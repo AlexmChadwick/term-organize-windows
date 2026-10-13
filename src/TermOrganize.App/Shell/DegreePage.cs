@@ -3,9 +3,10 @@
 
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using TermOrganize.Core;
-using Windows.Storage;
-using Windows.System;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.UI;
 
 namespace TermOrganize;
 
@@ -28,7 +29,7 @@ public sealed class DegreePage : UserControl
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         bar.Children.Add(_plans);
         bar.Children.Add(Make("Export PDF", (_, _) => ExportPdf()));
-        bar.Children.Add(Make("Print", (_, _) => ExportPdf(open: true)));
+        bar.Children.Add(Make("Print", (_, _) => Print(WinRT.Interop.WindowNative.GetWindowHandle(_window))));
         bar.Children.Add(Make("Autofill schedule", (_, _) => Autofill()));
         bar.Children.Add(Make("Check when courses are offered", (_, _) => _ = LoadHistoryAsync(force: true)));
         var left = new StackPanel { Spacing = 10 };
@@ -47,25 +48,30 @@ public sealed class DegreePage : UserControl
         Reload();
     }
 
-    public void ExportPdf(bool open = false)
+    public void ExportPdf()
     {
         if (_plan is null) return;
         var includeStudent = _plan.StudentName is not null || _plan.StudentID is not null;
-        if (open)
-        {
-            var path = DegreePlanPdf.TemporaryFile(_plan, includeStudent);
-            _ = LaunchAsync(path);
-            return;
-        }
         var desktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "degree-plan.pdf");
         File.WriteAllBytes(desktop, DegreePlanPdf.Render(_plan, includeStudent: includeStudent));
         _window.SetStatus("Wrote " + desktop);
     }
 
-    private static async Task LaunchAsync(string path)
+    public void Print(nint owner)
     {
-        var file = await StorageFile.GetFileFromPathAsync(path);
-        await Launcher.LaunchFileAsync(file);
+        if (_plan is null)
+        {
+            _window.SetStatus("Open a degree plan, then press Ctrl+P.");
+            return;
+        }
+        var includeStudent = _plan.StudentName is not null || _plan.StudentID is not null;
+        var lines = new List<string>();
+        lines.AddRange(DegreePlanFormat.HeaderLines(_plan, DateTimeOffset.Now, includeStudent));
+        lines.Add("");
+        foreach (var line in DegreePlanFormat.BodyLines(_plan))
+            lines.Add(new string(' ', line.Indent * 2) + line.Text);
+        if (NativePrint.Show(owner, _plan.Name, lines)) _window.SetStatus("Sent the degree plan to the printer.");
+        else _window.SetStatus("Print was canceled.");
     }
 
     private void Reload()
@@ -113,20 +119,22 @@ public sealed class DegreePage : UserControl
                 done.Children.Add(CourseLine(course, completed: true));
             _terms.Children.Add(Chrome.Card(done));
         }
-        for (var i = 0; i < _plan.Terms.Count; i++)
-            _terms.Children.Add(TermBlock(_plan.Terms[i], i));
+        _terms.Children.Add(Chrome.Body("Drag a course onto a semester, or onto another course, to reorder it."));
+        foreach (var term in _plan.Terms)
+            _terms.Children.Add(TermBlock(term));
         _terms.Children.Add(AddCourseRow());
         _terms.Children.Add(AddTermRow());
     }
 
-    private StackPanel TermBlock(DegreePlanTerm term, int index)
+    private StackPanel TermBlock(DegreePlanTerm term)
     {
         var block = new StackPanel { Spacing = 4 };
         block.Children.Add(new TextBlock { Text = $"{term.Name} \u00b7 {term.Credits:0.#} credits", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         var blocking = new List<CourseKey>();
-        foreach (var course in term.Courses)
+        for (var position = 0; position < term.Courses.Count; position++)
         {
-            block.Children.Add(CourseLine(course, completed: false, term));
+            var course = term.Courses[position];
+            block.Children.Add(CourseLine(course, completed: false, term, position));
             if (course.Key is not CourseKey key) continue;
             var offered = _history.IsLikelyOffered(key, term.Season);
             if (_history.IsChecked(key)) block.Children.Add(Chrome.Body(_history.Summary(key)));
@@ -162,6 +170,19 @@ public sealed class DegreePage : UserControl
                 block.Children.Add(row);
             }
         }
+        var drop = new Border
+        {
+            AllowDrop = true,
+            MinHeight = 32,
+            Padding = new Thickness(4),
+            Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+            Child = Chrome.Body(term.Courses.Count == 0 ? "Drop a course here." : "Drop here to put it last."),
+        };
+        var endId = term.Id;
+        var end = term.Courses.Count;
+        drop.DragOver += AcceptDegreeDrag;
+        drop.Drop += (_, args) => DropDegreeCourse(args, endId, end);
+        block.Children.Add(drop);
         var remove = new Button { Content = "Remove semester", HorizontalAlignment = HorizontalAlignment.Left };
         var termId = term.Id;
         remove.Click += (_, _) =>
@@ -174,9 +195,32 @@ public sealed class DegreePage : UserControl
         return block;
     }
 
-    private StackPanel CourseLine(DegreePlanCourse course, bool completed, DegreePlanTerm? term = null)
+    private StackPanel CourseLine(DegreePlanCourse course, bool completed, DegreePlanTerm? term = null, int position = 0)
     {
-        var row = new StackPanel { Spacing = 4 };
+        var row = new StackPanel
+        {
+            Spacing = 4,
+            Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+        };
+        if (!completed && term is not null)
+        {
+            row.CanDrag = true;
+            var courseId = course.Id;
+            var termId = term.Id;
+            var index = position;
+            row.DragStarting += (_, args) =>
+            {
+                args.Data.SetText("termorganize-course:" + courseId);
+                args.AllowedOperations = DataPackageOperation.Move;
+            };
+            row.AllowDrop = true;
+            row.DragOver += AcceptDegreeDrag;
+            row.Drop += (_, args) =>
+            {
+                args.Handled = true;
+                DropDegreeCourse(args, termId, index);
+            };
+        }
         var line = course.Key?.ToString() ?? course.Label;
         row.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -338,6 +382,33 @@ public sealed class DegreePage : UserControl
             if (_session.Store.AddCourse(key, schedule.Id)) added++;
         }
         _window.SetStatus(added == 0 ? "Those courses are already on the schedule." : $"Added {added} courses to {schedule.Name}.");
+    }
+
+    private static void AcceptDegreeDrag(object sender, DragEventArgs args)
+    {
+        args.AcceptedOperation = args.DataView.Contains(StandardDataFormats.Text)
+            ? DataPackageOperation.Move
+            : DataPackageOperation.None;
+        args.Handled = true;
+    }
+
+    private async void DropDegreeCourse(DragEventArgs args, Guid termId, int position)
+    {
+        var deferral = args.GetDeferral();
+        try
+        {
+            if (_plan is null || !args.DataView.Contains(StandardDataFormats.Text)) return;
+            var text = await args.DataView.GetTextAsync();
+            const string prefix = "termorganize-course:";
+            if (!text.StartsWith(prefix, StringComparison.Ordinal)) return;
+            if (!Guid.TryParse(text[prefix.Length..], out var courseId)) return;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan => DegreePlanEditing.Move(courseId, termId, position, plan));
+            ShowPlan();
+        }
+        finally
+        {
+            deferral.Complete();
+        }
     }
 
     private static string HistoryPath => Path.Combine(

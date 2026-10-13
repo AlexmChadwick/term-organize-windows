@@ -99,6 +99,11 @@ public sealed class CourseAttributeRepository
     private bool _loaded;
     private bool _dirty;
 
+    public CourseAttributeRepository()
+        : this(new BannerAttributeFetcher())
+    {
+    }
+
     public CourseAttributeRepository(
         IAttributeFetcher fetcher,
         string? directory = null,
@@ -217,13 +222,27 @@ public sealed class CourseAttributeRepository
         try { File.Delete(_filePath); } catch (IOException) { }
     }
 
-    /// <summary>The course's attributes in the newest loaded term that has sections of it.</summary>
+    /// <summary>
+    /// The course's attributes in the newest loaded term that has sections of it.
+    /// Indexes are newest first, matching the Mac lookup. A course record with no
+    /// attribute list still uses the codes on its sections. Honors is not an NUpath.
+    /// </summary>
     public static Lookup? FromLoaded(CourseKey key, IReadOnlyList<CatalogIndex> indexes)
     {
         foreach (var index in indexes)
         {
-            if (index.Sections(key).Count == 0) continue;
-            return Lookup.FoundCodes(index.Course(key)?.Attributes ?? [], index.Term.Code);
+            var sections = index.Sections(key);
+            if (sections.Count == 0) continue;
+            var codes = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var code in index.Course(key)?.Attributes ?? [])
+                if (!string.IsNullOrEmpty(code)) codes.Add(code);
+            if (codes.Count == 0)
+            {
+                foreach (var section in sections)
+                foreach (var code in section.Attributes)
+                    if (!string.IsNullOrEmpty(code) && code != BannerAttributes.Honors) codes.Add(code);
+            }
+            return Lookup.FoundCodes(codes, index.Term.Code);
         }
         return null;
     }

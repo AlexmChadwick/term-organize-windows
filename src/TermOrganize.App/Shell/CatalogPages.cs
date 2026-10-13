@@ -34,7 +34,7 @@ public sealed class SubjectsPage : UserControl
         };
     }
 
-    internal static Grid Split(UIElement left, UIElement right) => new PaneSplit(left, right, 320);
+    internal static Grid Split(FrameworkElement left, FrameworkElement right) => new PaneSplit(left, right, 320);
 }
 
 public sealed class SavedPage : UserControl

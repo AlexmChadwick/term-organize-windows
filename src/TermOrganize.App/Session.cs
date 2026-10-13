@@ -25,7 +25,7 @@ public sealed class AppSession
     {
         try
         {
-            var catalog = await Task.Run(BundledCatalog.Load).ConfigureAwait(false);
+            var catalog = await Task.Run(() => BundledCatalog.Load()).ConfigureAwait(false);
             Remember(catalog);
             Error = null;
         }

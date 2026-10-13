@@ -94,10 +94,10 @@ public sealed class SettingsPage : UserControl
         DateTimeOffset? last = null;
         foreach (var item in session.Store.Watchlist)
         {
-            if (item.LastCheckedAt is DateTimeOffset at && (last is null || at > last)) last = at;
+            if (item.LastCheckedAt is DateTimeOffset checkedAt && (last is null || checkedAt > last)) last = checkedAt;
         }
-        panel.Children.Add(Chrome.Body(last is DateTimeOffset at
-            ? "Last checked " + at.ToLocalTime().ToString("g") + "."
+        panel.Children.Add(Chrome.Body(last is DateTimeOffset checked
+            ? "Last checked " + checked.ToLocalTime().ToString("g") + "."
             : session.Store.Watchlist.Count == 0 ? "Nothing watched yet." : "Not checked yet."));
         var now = new Button { Content = "Check now", HorizontalAlignment = HorizontalAlignment.Left };
         now.Click += (_, _) => PlatformServices.CheckSeats(session, window);

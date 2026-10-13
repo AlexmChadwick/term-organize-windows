@@ -13,7 +13,7 @@ internal sealed class PaneSplit : Grid
 {
     private readonly ColumnDefinition _left;
 
-    public PaneSplit(UIElement left, UIElement right, double start = 420)
+    public PaneSplit(FrameworkElement left, FrameworkElement right, double start = 420)
     {
         _left = new ColumnDefinition { Width = new GridLength(start), MinWidth = 220, MaxWidth = 720 };
         ColumnDefinitions.Add(_left);

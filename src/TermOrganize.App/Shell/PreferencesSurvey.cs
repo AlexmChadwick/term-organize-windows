@@ -3,6 +3,7 @@
 
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using TermOrganize.Core;
 
 namespace TermOrganize;
@@ -358,9 +359,9 @@ internal sealed class PreferencesSurvey : StackPanel
 
     private static TimeLimit? ReadLimit(CheckBox? on, ComboBox? time, ComboBox? strength)
     {
-        if (on?.IsChecked != true || time?.SelectedItem is not TimeChoice choice || choice.Minutes is not int minutes) return null;
+        if (on?.IsChecked != true || time?.SelectedItem is not TimeChoice choice) return null;
         var how = strength?.SelectedItem is EnumChoice<PreferenceStrength> value ? value.Value : PreferenceStrength.Preferred;
-        return new TimeLimit(minutes, how);
+        return new TimeLimit(choice.Minutes, how);
     }
 
     private static int? Whole(NumberBox? box) => box is null || double.IsNaN(box.Value) ? null : (int)box.Value;

@@ -16,7 +16,7 @@ public static class PlatformServices
     private static DispatcherQueueTimer? _timer;
     private static bool _toastsRegistered;
 
-    public static void Start(Window window, AppSession session)
+    public static void Start(MainWindow window, AppSession session)
     {
         RegisterProtocols();
         RegisterPdfOpenWith();
@@ -49,7 +49,7 @@ public static class PlatformServices
         }
     }
 
-    public static void CheckSeats(AppSession session, Window window) => _ = CheckSeatsAsync(session, window);
+    public static void CheckSeats(AppSession session, MainWindow window) => _ = CheckSeatsAsync(session, window);
 
     public static bool ShowToast(string title, string body)
     {
@@ -70,7 +70,7 @@ public static class PlatformServices
         }
     }
 
-    private static async Task CheckSeatsAsync(AppSession session, Window window)
+    private static async Task CheckSeatsAsync(AppSession session, MainWindow window)
     {
         try
         {
@@ -85,7 +85,7 @@ public static class PlatformServices
         }
     }
 
-    private static void ReplayAlerts(Window window)
+    private static void ReplayAlerts(MainWindow window)
     {
         foreach (var (title, body) in SeatAlertLog.Take())
         {

@@ -228,7 +228,7 @@ public sealed partial class MainWindow : Window
     private sealed class TermChoice(Term term)
     {
         public Term Term { get; } = term;
-        public override string ToString() => string.IsNullOrWhiteSpace(term.Name) ? term.Code : term.Name;
+        public override string ToString() => string.IsNullOrWhiteSpace(Term.Name) ? Term.Code : Term.Name;
     }
 
     private void ToggleTheme(object sender, RoutedEventArgs e)
@@ -264,7 +264,8 @@ public sealed partial class MainWindow : Window
         Go(VirtualKey.Number6, "schedules");
         Go(VirtualKey.Number7, "degree");
         Go(VirtualKey.Number8, "watch");
-        var comma = new KeyboardAccelerator { Key = VirtualKey.OemComma, Modifiers = VirtualKeyModifiers.Control };
+        // VK_OEM_COMMA. Windows.System.VirtualKey has no OemComma member.
+        var comma = new KeyboardAccelerator { Key = (VirtualKey)188, Modifiers = VirtualKeyModifiers.Control };
         comma.Invoked += (_, args) => { args.Handled = true; Select("settings"); };
         root.KeyboardAccelerators.Add(comma);
         Command(VirtualKey.N, NewSchedule);

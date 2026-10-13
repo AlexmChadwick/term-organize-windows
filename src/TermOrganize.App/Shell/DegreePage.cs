@@ -120,13 +120,13 @@ public sealed class DegreePage : UserControl
             _terms.Children.Add(Chrome.Card(done));
         }
         _terms.Children.Add(Chrome.Body("Drag a course onto a semester, or onto another course, to reorder it."));
-        foreach (var term in _plan.Terms)
-            _terms.Children.Add(TermBlock(term));
+        for (var termIndex = 0; termIndex < _plan.Terms.Count; termIndex++)
+            _terms.Children.Add(TermBlock(_plan.Terms[termIndex], termIndex));
         _terms.Children.Add(AddCourseRow());
         _terms.Children.Add(AddTermRow());
     }
 
-    private StackPanel TermBlock(DegreePlanTerm term)
+    private StackPanel TermBlock(DegreePlanTerm term, int termIndex)
     {
         var block = new StackPanel { Spacing = 4 };
         block.Children.Add(new TextBlock { Text = $"{term.Name} \u00b7 {term.Credits:0.#} credits", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
@@ -141,7 +141,7 @@ public sealed class DegreePage : UserControl
             if (offered == false) blocking.Add(key);
             if (_session.Index is not null && course.Key is CourseKey planned)
             {
-                var status = DegreePlanAnalysis.ForCourse(planned, index, _plan!, _session.Index);
+                var status = DegreePlanAnalysis.ForCourse(planned, termIndex, _plan!, _session.Index);
                 if (status.MissingText is string missing) block.Children.Add(Chrome.Body("Needs " + missing));
             }
         }
@@ -426,7 +426,7 @@ public sealed class DegreePage : UserControl
     private sealed class PlanChoice(DegreePlan plan)
     {
         public DegreePlan Plan { get; } = plan;
-        public override string ToString() => plan.IsPrimary ? plan.Name + " \u00b7 Primary" : plan.Name;
+        public override string ToString() => Plan.IsPrimary ? Plan.Name + " \u00b7 Primary" : Plan.Name;
     }
 
     private sealed record TermChoice(DegreePlanTerm Term)

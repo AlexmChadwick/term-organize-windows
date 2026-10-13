@@ -350,7 +350,7 @@ public sealed class SchedulesPage : UserControl
     private sealed class PlanChoice(SchedulePlan plan)
     {
         public SchedulePlan Plan { get; } = plan;
-        public override string ToString() => plan.IsPrimary ? plan.Name + " \u00b7 Primary" : plan.Name;
+        public override string ToString() => Plan.IsPrimary ? Plan.Name + " \u00b7 Primary" : Plan.Name;
     }
 
     private sealed record DayChoice(DaySet? Days, string Label)

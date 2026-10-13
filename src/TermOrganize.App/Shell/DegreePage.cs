@@ -14,30 +14,36 @@ public sealed class DegreePage : UserControl
     private readonly AppSession _session;
     private readonly MainWindow _window;
     private readonly ComboBox _plans = new() { MinWidth = 240 };
-    private readonly StackPanel _body = new() { Spacing = 8 };
+    private readonly StackPanel _terms = new() { Spacing = 8 };
+    private readonly DegreeRequirementsPane _requirements;
     private DegreePlan? _plan;
+    private OfferingHistory _history = OfferingHistory.Empty;
+    private bool _filling;
 
     public DegreePage(AppSession session, MainWindow window)
     {
         _session = session;
         _window = window;
+        _requirements = new DegreeRequirementsPane(session, window, PaintTerms);
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         bar.Children.Add(_plans);
-        var pdf = new Button { Content = "Export PDF" };
-        pdf.Click += (_, _) => ExportPdf();
-        var print = new Button { Content = "Print" };
-        print.Click += (_, _) => ExportPdf(open: true);
-        var autofill = new Button { Content = "Autofill schedule" };
-        autofill.Click += (_, _) => Autofill();
-        bar.Children.Add(pdf);
-        bar.Children.Add(print);
-        bar.Children.Add(autofill);
-        var root = new StackPanel { Spacing = 12, Padding = new Thickness(12) };
-        root.Children.Add(Chrome.Heading("Degree plans"));
-        root.Children.Add(bar);
-        root.Children.Add(_body);
-        Content = new ScrollViewer { Content = root };
-        _plans.SelectionChanged += (_, _) => ShowPlan();
+        bar.Children.Add(Make("Export PDF", (_, _) => ExportPdf()));
+        bar.Children.Add(Make("Print", (_, _) => ExportPdf(open: true)));
+        bar.Children.Add(Make("Autofill schedule", (_, _) => Autofill()));
+        bar.Children.Add(Make("Check when courses are offered", (_, _) => _ = LoadHistoryAsync(force: true)));
+        var left = new StackPanel { Spacing = 10 };
+        left.Children.Add(Chrome.Heading("Degree plans"));
+        left.Children.Add(new ScrollViewer
+        {
+            Content = bar,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Auto,
+            VerticalScrollMode = ScrollMode.Disabled,
+        });
+        left.Children.Add(_terms);
+        var scroll = new ScrollViewer { Content = left };
+        Content = new PaneSplit(scroll, _requirements, 460) { Padding = new Thickness(12) };
+        _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         Reload();
     }
 
@@ -64,72 +70,255 @@ public sealed class DegreePage : UserControl
 
     private void Reload()
     {
+        _filling = true;
         _plans.Items.Clear();
         foreach (var plan in _session.Store.SortedDegreePlans)
             _plans.Items.Add(new PlanChoice(plan));
+        _filling = false;
         if (_plans.Items.Count == 0)
         {
-            _body.Children.Clear();
-            _body.Children.Add(Chrome.Body("Import a degree audit PDF with Ctrl+O, or create a plan from the File menu."));
+            _terms.Children.Clear();
+            _terms.Children.Add(Chrome.Body("Import a degree audit PDF with Ctrl+O, or create a plan from the File menu."));
             return;
         }
         _plans.SelectedIndex = 0;
+        ShowPlan();
     }
 
     private void ShowPlan()
     {
         _plan = (_plans.SelectedItem as PlanChoice)?.Plan;
-        _body.Children.Clear();
+        _terms.Children.Clear();
         if (_plan is null) return;
-        _body.Children.Add(Chrome.Body($"{_plan.Name} · {_plan.CompletedCredits:0.#} completed · {_plan.PlannedCredits:0.#} planned"));
-        if (_plan.Program is not null) _body.Children.Add(Chrome.Body(_plan.Program));
+        var cached = OfferingHistoryBuilder.TryLoad(HistoryPath, _plan.AllCourseKeys());
+        if (cached is not null) _history = cached;
+        PaintTerms();
+        _requirements.Show(_plan, _history);
+    }
+
+    private void PaintTerms()
+    {
+        if (_plan is null) return;
+        _terms.Children.Clear();
+        _terms.Children.Add(Chrome.Body($"{_plan.Name} \u00b7 {_plan.CompletedCredits:0.#} completed \u00b7 {_plan.PlannedCredits:0.#} planned"));
+        if (_plan.CatalogProgramTitle is not null) _terms.Children.Add(Chrome.Body(_plan.CatalogProgramTitle));
         var duplicates = DegreePlanAnalysis.DuplicateKeys(_plan);
         if (duplicates.Count > 0)
-            _body.Children.Add(Chrome.Body("Listed more than once: " + string.Join(", ", duplicates)));
-        for (var i = 0; i < _plan.Terms.Count; i++)
+            _terms.Children.Add(Chrome.Body("Listed more than once: " + string.Join(", ", duplicates)));
+        if (_plan.Completed.Count > 0)
         {
-            var term = _plan.Terms[i];
-            var block = new StackPanel { Spacing = 2 };
-            block.Children.Add(new TextBlock { Text = $"{term.Name} · {term.Credits:0.#} credits", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            foreach (var course in term.Courses)
-            {
-                var line = course.Key?.ToString() ?? course.Label;
-                if (course.Key is CourseKey key)
-                {
-                    var status = DegreePlanAnalysis.ForCourse(key, i, _plan, _session.Index);
-                    if (status.IsMissing) line += " — needs " + status.MissingText;
-                }
-                block.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
-            }
-            _body.Children.Add(Chrome.Card(block));
+            var done = new StackPanel { Spacing = 2 };
+            done.Children.Add(new TextBlock { Text = "Completed", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            foreach (var course in _plan.Completed)
+                done.Children.Add(CourseLine(course, completed: true));
+            _terms.Children.Add(Chrome.Card(done));
         }
-        var add = new TextBox { PlaceholderText = "Add a course, such as CS 3000" };
-        var addButton = new Button { Content = "Add to next term" };
-        addButton.Click += (_, _) => AddCourse(add.Text);
+        for (var i = 0; i < _plan.Terms.Count; i++)
+            _terms.Children.Add(TermBlock(_plan.Terms[i], i));
+        _terms.Children.Add(AddCourseRow());
+        _terms.Children.Add(AddTermRow());
+    }
+
+    private StackPanel TermBlock(DegreePlanTerm term, int index)
+    {
+        var block = new StackPanel { Spacing = 4 };
+        block.Children.Add(new TextBlock { Text = $"{term.Name} \u00b7 {term.Credits:0.#} credits", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var blocking = new List<CourseKey>();
+        foreach (var course in term.Courses)
+        {
+            block.Children.Add(CourseLine(course, completed: false, term));
+            if (course.Key is not CourseKey key) continue;
+            var offered = _history.IsLikelyOffered(key, term.Season);
+            if (_history.IsChecked(key)) block.Children.Add(Chrome.Body(_history.Summary(key)));
+            if (offered == false) blocking.Add(key);
+            if (_session.Index is not null && course.Key is CourseKey planned)
+            {
+                var status = DegreePlanAnalysis.ForCourse(planned, index, _plan!, _session.Index);
+                if (status.MissingText is string missing) block.Children.Add(Chrome.Body("Needs " + missing));
+            }
+        }
+        if (blocking.Count > 0 && _plan is not null)
+        {
+            var suggestions = DegreePlanReordering.Suggestions(
+                _plan,
+                term.Id,
+                blocking,
+                _history,
+                Prerequisite,
+                _plan.DeclaredEquivalences);
+            foreach (var suggestion in suggestions)
+            {
+                var row = new StackPanel { Spacing = 2 };
+                row.Children.Add(Chrome.Body(suggestion.Title));
+                foreach (var reason in suggestion.Reasons) row.Children.Add(Chrome.Body(reason));
+                var apply = new Button { Content = "Apply this move", HorizontalAlignment = HorizontalAlignment.Left };
+                var captured = suggestion;
+                apply.Click += (_, _) =>
+                {
+                    _session.Store.UpdateDegreePlan(_plan.Id, plan => DegreePlanReordering.Apply(captured, plan));
+                    ShowPlan();
+                };
+                row.Children.Add(apply);
+                block.Children.Add(row);
+            }
+        }
+        var remove = new Button { Content = "Remove semester", HorizontalAlignment = HorizontalAlignment.Left };
+        var termId = term.Id;
+        remove.Click += (_, _) =>
+        {
+            if (_plan is null) return;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan => DegreePlanEditing.RemoveTerm(termId, plan));
+            ShowPlan();
+        };
+        block.Children.Add(remove);
+        return block;
+    }
+
+    private StackPanel CourseLine(DegreePlanCourse course, bool completed, DegreePlanTerm? term = null)
+    {
+        var row = new StackPanel { Spacing = 4 };
+        var line = course.Key?.ToString() ?? course.Label;
+        row.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var id = course.Id;
+        if (!completed)
+        {
+            var mark = new Button { Content = "Mark completed" };
+            mark.Click += (_, _) =>
+            {
+                if (_plan is null) return;
+                _session.Store.UpdateDegreePlan(_plan.Id, plan => DegreePlanEditing.MarkCompleted(id, plan));
+                ShowPlan();
+            };
+            buttons.Children.Add(mark);
+        }
+        var remove = new Button { Content = "Remove" };
+        remove.Click += (_, _) =>
+        {
+            if (_plan is null) return;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan =>
+            {
+                if (completed) DegreePlanEditing.RemoveCompletedCourse(id, plan);
+                else DegreePlanEditing.RemovePlannedCourse(id, plan);
+            });
+            ShowPlan();
+        };
+        buttons.Children.Add(remove);
+        row.Children.Add(buttons);
+        if (course.Key is CourseKey key)
+        {
+            var counts = new TextBox { PlaceholderText = "Counts as, for example CS 2500", Width = 220 };
+            var save = new Button { Content = "Save renumbering" };
+            save.Click += (_, _) =>
+            {
+                if (_plan is null || CourseKey.Parse(counts.Text) is not CourseKey countsAs) return;
+                DegreeEquivalenceEditing.Declare(_session.Store, _plan.Id, key, countsAs, "Renumbered");
+                ShowPlan();
+            };
+            var pair = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            pair.Children.Add(counts);
+            pair.Children.Add(save);
+            row.Children.Add(pair);
+        }
+        return row;
+    }
+
+    private StackPanel AddCourseRow()
+    {
+        var add = new TextBox { PlaceholderText = "Add a course, such as CS 3000", MinWidth = 180 };
+        var termBox = new ComboBox { MinWidth = 140 };
+        if (_plan is not null)
+        {
+            foreach (var term in _plan.Terms) termBox.Items.Add(new TermChoice(term));
+            if (termBox.Items.Count > 0) termBox.SelectedIndex = termBox.Items.Count - 1;
+        }
+        var button = new Button { Content = "Add" };
+        button.Click += (_, _) =>
+        {
+            if (_plan is null || CourseKey.Parse(add.Text) is not CourseKey key || termBox.SelectedItem is not TermChoice choice) return;
+            var title = _session.Index?.Course(key)?.Title ?? "";
+            var credits = _session.Index?.Course(key)?.MaxCredits ?? 4;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan =>
+                DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
+            ShowPlan();
+        };
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(add);
-        row.Children.Add(addButton);
-        _body.Children.Add(row);
+        row.Children.Add(termBox);
+        row.Children.Add(button);
+        return row;
     }
 
-    private void AddCourse(string text)
+    private StackPanel AddTermRow()
     {
-        if (_plan is null || CourseKey.Parse(text) is not CourseKey key) return;
-        var title = _session.Index?.Course(key)?.Title ?? "";
-        var credits = _session.Index?.Course(key)?.MaxCredits ?? 4;
-        _session.Store.UpdateDegreePlan(_plan.Id, plan =>
+        var season = new ComboBox();
+        foreach (var value in Enum.GetValues<PlanSeason>()) season.Items.Add(new SeasonChoice(value));
+        season.SelectedIndex = 0;
+        var year = new NumberBox { Value = DateTime.Now.Year, Minimum = 1990, Maximum = 2045, Width = 100, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline };
+        var button = new Button { Content = "Add semester" };
+        button.Click += (_, _) =>
         {
-            var term = plan.Terms.LastOrDefault() ?? NewTerm(plan);
-            if (!plan.Terms.Contains(term)) plan.Terms.Add(term);
-            term.Courses.Add(new DegreePlanCourse(key, title, credits));
-        });
-        Reload();
+            if (_plan is null || season.SelectedItem is not SeasonChoice choice || double.IsNaN(year.Value)) return;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan =>
+                DegreePlanEditing.AddTerm(new DegreePlanTerm { Season = choice.Season, Year = (int)year.Value }, plan));
+            ShowPlan();
+        };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        row.Children.Add(season);
+        row.Children.Add(year);
+        row.Children.Add(button);
+        return row;
     }
 
-    private static DegreePlanTerm NewTerm(DegreePlan plan)
+    private async Task LoadHistoryAsync(bool force)
     {
-        var year = plan.Terms.LastOrDefault()?.Year ?? DateTime.Now.Year;
-        return new DegreePlanTerm { Season = PlanSeason.Fall, Year = year };
+        if (_plan is null) return;
+        var keys = _plan.AllCourseKeys();
+        if (!force && OfferingHistoryBuilder.TryLoad(HistoryPath, keys) is OfferingHistory cached)
+        {
+            _history = cached;
+            PaintTerms();
+            _requirements.Show(_plan, _history);
+            return;
+        }
+        _window.SetStatus("Checking which terms offered these courses\u2026");
+        try
+        {
+            var terms = await RecentTermsAsync();
+            _history = await OfferingHistoryBuilder.FetchAsync(terms, keys, Offered);
+            OfferingHistoryBuilder.Save(HistoryPath, _history);
+            _window.SetStatus("Offering history is up to date.");
+        }
+        catch (Exception ex)
+        {
+            _window.SetStatus("Couldn\u2019t check offering history. " + ex.Message);
+        }
+        PaintTerms();
+        if (_plan is not null) _requirements.Show(_plan, _history);
+    }
+
+    private static async Task<IReadOnlySet<CourseKey>> Offered(string code, IReadOnlyList<CourseKey> wanted, CancellationToken token) =>
+        await BannerClient.Shared.FetchOfferedCoursesAsync(code, wanted, token);
+
+    private async Task<List<Term>> RecentTermsAsync()
+    {
+        var known = _session.KnownTerms.Where(term => term.College == TermCollege.Neu).ToList();
+        if (known.Count == 0)
+        {
+            try { known = (await BannerTermList.FetchAsync()).Where(term => term.College == TermCollege.Neu).ToList(); }
+            catch (Exception) { known = _session.Term is Term current ? [current] : []; }
+        }
+        if (known.Count == 0) return [];
+        var newest = known.MaxBy(term => term.Code)!;
+        var floor = TermCalendar.MonthIndex(newest.Code) - 36;
+        return known.Where(term => TermCalendar.MonthIndex(term.Code) >= floor).OrderByDescending(term => term.Code, StringComparer.Ordinal).Take(16).ToList();
+    }
+
+    private RequisiteAnswer Prerequisite(CourseKey key)
+    {
+        var course = _session.Course(key);
+        if (course is null) return RequisiteAnswer.Unknown;
+        return course.Prereqs is Requisite requisite ? RequisiteAnswer.Known(requisite) : RequisiteAnswer.None;
     }
 
     private void Autofill()
@@ -151,9 +340,31 @@ public sealed class DegreePage : UserControl
         _window.SetStatus(added == 0 ? "Those courses are already on the schedule." : $"Added {added} courses to {schedule.Name}.");
     }
 
+    private static string HistoryPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "TermOrganize",
+        "offering-history.json");
+
+    private static Button Make(string label, RoutedEventHandler click)
+    {
+        var button = new Button { Content = label };
+        button.Click += click;
+        return button;
+    }
+
     private sealed class PlanChoice(DegreePlan plan)
     {
         public DegreePlan Plan { get; } = plan;
-        public override string ToString() => plan.IsPrimary ? plan.Name + " · Primary" : plan.Name;
+        public override string ToString() => plan.IsPrimary ? plan.Name + " \u00b7 Primary" : plan.Name;
+    }
+
+    private sealed record TermChoice(DegreePlanTerm Term)
+    {
+        public override string ToString() => Term.Name;
+    }
+
+    private sealed record SeasonChoice(PlanSeason Season)
+    {
+        public override string ToString() => Season.ExportName();
     }
 }

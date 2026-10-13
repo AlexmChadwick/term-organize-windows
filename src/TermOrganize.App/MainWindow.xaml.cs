@@ -4,6 +4,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.Windows.AppLifecycle;
 using TermOrganize.Core;
 using Windows.ApplicationModel.Activation;
@@ -17,6 +18,9 @@ public sealed partial class MainWindow : Window
     private string _area = "search";
     private bool _fillingTerms;
     private bool _exiting;
+    private int _termGeneration;
+    private CatalogIndex? _shownIndex;
+    private string? _shownError;
     private readonly string _themePath = Path.Combine(Path.GetDirectoryName(UserDataStore.DefaultPath())!, "theme.txt");
 
     public MainWindow()
@@ -37,6 +41,7 @@ public sealed partial class MainWindow : Window
         WireKeys();
         Nav.SelectedItem = Nav.MenuItems[0];
         Show("search");
+        if (App.Session.Index is not null || App.Session.Error is not null) Show("search");
         _ = LoadTermsAsync();
     }
 
@@ -109,11 +114,16 @@ public sealed partial class MainWindow : Window
 
     public void SetUpNext(string text) => UpNextText.Text = text;
 
-    public void SetStatus(string text) => Disclaimer.Text = text;
+    public void SetStatus(string text) =>
+        Disclaimer.Text = string.IsNullOrWhiteSpace(text)
+            ? LegalText.UnofficialNotice + "  Course information is \u00a9 Northeastern University."
+            : text + "  " + LegalText.UnofficialNotice;
 
     private void Show(string tag)
     {
         _area = tag;
+        _shownIndex = App.Session.Index;
+        _shownError = App.Session.Error;
         var session = App.Session;
         UIElement page = tag switch
         {
@@ -123,7 +133,7 @@ public sealed partial class MainWindow : Window
             "rooms" => new RoomsPage(session),
             "schedules" => new SchedulesPage(session, this),
             "degree" => new DegreePage(session, this),
-            "watch" => new WatchPage(session),
+            "watch" => new WatchPage(session, this),
             "settings" => new SettingsPage(session, this),
             _ => new SearchPage(session),
         };
@@ -143,8 +153,11 @@ public sealed partial class MainWindow : Window
         var session = App.Session;
         Title = session.Term is null ? "Term Organize" : $"Term Organize — {session.Term.Name}";
         if (session.Index is not null && TermPicker.Items.Count == 0)
-            TermPicker.Items.Add(session.Index.Term);
-        RefreshUpNext();
+            TermPicker.Items.Add(new TermChoice(session.Index.Term));
+        if (!ReferenceEquals(_shownIndex, session.Index) || _shownError != session.Error)
+            Show(_area);
+        else
+            RefreshUpNext();
     }
 
     private async Task LoadTermsAsync()
@@ -156,19 +169,65 @@ public sealed partial class MainWindow : Window
         {
             _fillingTerms = true;
             TermPicker.Items.Clear();
-            if (App.Session.Index is not null) TermPicker.Items.Add(App.Session.Index.Term);
-            foreach (var term in live.Where(t => t.Code != App.Session.Index?.Term.Code).Take(12))
-                TermPicker.Items.Add(term);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            void Add(Term term)
+            {
+                if (term.Code.Length == 0 || !seen.Add(term.Code)) return;
+                TermPicker.Items.Add(new TermChoice(term));
+            }
+            if (App.Session.Index is not null) Add(App.Session.Index.Term);
+            foreach (var term in live) Add(term);
+            App.Session.RememberTerms(seen.Count == 0 ? [] : TermPicker.Items.OfType<TermChoice>().Select(choice => choice.Term).ToList());
+            var selected = App.Session.Term?.Code ?? App.Session.Store.Preferences.SelectedTermCode;
             TermPicker.SelectedIndex = 0;
+            for (var i = 0; i < TermPicker.Items.Count; i++)
+            {
+                if (TermPicker.Items[i] is TermChoice choice && choice.Term.Code == selected)
+                    TermPicker.SelectedIndex = i;
+            }
             _fillingTerms = false;
         });
     }
 
-    private void TermChanged(object sender, SelectionChangedEventArgs e)
+    private async void TermChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_fillingTerms || TermPicker.SelectedItem is not Term term) return;
-        App.Session.Select(term);
+        if (_fillingTerms || TermPicker.SelectedItem is not TermChoice choice) return;
+        var generation = ++_termGeneration;
+        App.Session.Store.ReplacePreferences(CopyPrefs(prefs => prefs.SelectedTermCode = choice.Term.Code));
+        await App.Session.SelectAsync(choice.Term, progress: text => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (generation == _termGeneration) SetStatus(text);
+        }));
+        if (generation != _termGeneration) return;
         Show(_area);
+    }
+
+    private async Task ReloadTermAsync()
+    {
+        if (App.Session.Term is not Term term)
+        {
+            Show(_area);
+            return;
+        }
+        var generation = ++_termGeneration;
+        await App.Session.SelectAsync(term, force: true, progress: text => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (generation == _termGeneration) SetStatus(text);
+        }));
+        if (generation == _termGeneration) Show(_area);
+    }
+
+    private AppPreferences CopyPrefs(Action<AppPreferences> change)
+    {
+        var prefs = App.Session.Store.Preferences;
+        change(prefs);
+        return prefs;
+    }
+
+    private sealed class TermChoice(Term term)
+    {
+        public Term Term { get; } = term;
+        public override string ToString() => string.IsNullOrWhiteSpace(term.Name) ? term.Code : term.Name;
     }
 
     private void ToggleTheme(object sender, RoutedEventArgs e)
@@ -212,7 +271,7 @@ public sealed partial class MainWindow : Window
         Command(VirtualKey.O, () => _ = ImportDegreeAsync());
         Command(VirtualKey.E, Export);
         Command(VirtualKey.P, Print);
-        Command(VirtualKey.R, () => Show(_area));
+        Command(VirtualKey.R, () => _ = ReloadTermAsync());
         var pane = new KeyboardAccelerator { Key = VirtualKey.Number0, Modifiers = VirtualKeyModifiers.Control | VirtualKeyModifiers.Menu };
         pane.Invoked += (_, args) => { args.Handled = true; Nav.IsPaneOpen = !Nav.IsPaneOpen; };
         root.KeyboardAccelerators.Add(pane);
@@ -239,7 +298,7 @@ public sealed partial class MainWindow : Window
     private void MenuDegree(object sender, RoutedEventArgs e) => Select("degree");
     private void MenuWatch(object sender, RoutedEventArgs e) => Select("watch");
     private void MenuSettings(object sender, RoutedEventArgs e) => Select("settings");
-    private void MenuReload(object sender, RoutedEventArgs e) => Show(_area);
+    private void MenuReload(object sender, RoutedEventArgs e) => _ = ReloadTermAsync();
     private void MenuPane(object sender, RoutedEventArgs e) => Nav.IsPaneOpen = !Nav.IsPaneOpen;
 
     private void NewSchedule()
@@ -275,7 +334,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Disclaimer.Text = ex.Message;
+            SetStatus(ex.Message);
         }
     }
 
@@ -289,14 +348,14 @@ public sealed partial class MainWindow : Window
         {
             var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "term-organize-data.json");
             App.Session.Store.ExportTo(path);
-            Disclaimer.Text = "Exported your data to " + path;
+            SetStatus("Exported your data to " + path);
         }
     }
 
     private void Print()
     {
         if (Host.Children.FirstOrDefault() is DegreePage degree) degree.ExportPdf(open: true);
-        else Disclaimer.Text = "Open a degree plan and press Ctrl+P to print its View Plan PDF.";
+        else SetStatus("Open a degree plan and press Ctrl+P to print its View Plan PDF.");
     }
 
     private void ShowWindow(object sender, RoutedEventArgs e)

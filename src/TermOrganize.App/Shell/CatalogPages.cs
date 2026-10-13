@@ -34,16 +34,7 @@ public sealed class SubjectsPage : UserControl
         };
     }
 
-    internal static Grid Split(UIElement left, UIElement right)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.Children.Add(left);
-        Grid.SetColumn(right, 1);
-        grid.Children.Add(right);
-        return grid;
-    }
+    internal static Grid Split(UIElement left, UIElement right) => new PaneSplit(left, right, 320);
 }
 
 public sealed class SavedPage : UserControl
@@ -128,14 +119,20 @@ public sealed class RoomsPage : UserControl
         var panel = new StackPanel { Spacing = 8, Padding = new Thickness(12) };
         Content = new ScrollViewer { Content = panel };
         panel.Children.Add(Chrome.Heading("Free rooms"));
-        if (session.Index is null)
+        if (session.Index is not CatalogIndex index)
         {
             panel.Children.Add(Chrome.Body(session.Error ?? "The catalog is still loading."));
             return;
         }
         var moment = RoomAvailability.Moment.From(DateTime.Now);
-        panel.Children.Add(Chrome.Body("Rooms with no class at " + moment.Label + ", from the bundled snapshot."));
-        var buildings = RoomAvailability.Of(session.Index.Buildings, moment);
+        var preferred = session.Store.Preferences.PreferredCampus;
+        panel.Children.Add(Chrome.Body(preferred is null
+            ? "Rooms with no class at " + moment.Label + "."
+            : "Rooms with no class at " + moment.Label + " on " + preferred + "."));
+        var buildings = RoomAvailability.Of(index.Buildings.Where(building =>
+            preferred is null
+            || string.Equals(building.CampusCode, preferred, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(index.CampusName(building.CampusCode), preferred, StringComparison.OrdinalIgnoreCase)), moment);
         var shown = 0;
         foreach (var building in RoomAvailability.Sorted(buildings, RoomAvailability.BuildingSort.MostFree).Take(12))
         {

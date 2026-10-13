@@ -13,8 +13,18 @@ public sealed class SchedulesPage : UserControl
     private readonly AppSession _session;
     private readonly MainWindow _window;
     private readonly ComboBox _plans = new() { MinWidth = 220 };
-    private readonly StackPanel _body = new() { Spacing = 8 };
+    private readonly StackPanel _courses = new() { Spacing = 8 };
+    private readonly StackPanel _results = new() { Spacing = 8 };
+    private readonly WeekCalendarView _week = new();
+    private readonly TextBlock _conflicts = new() { TextWrapping = TextWrapping.Wrap };
+    private CheckBox? _hideFull;
+    private CheckBox? _includeHonors;
+    private CheckBox? _includeOnline;
+    private NumberBox? _minSeats;
+    private ComboBox? _campus;
+    private ComboBox? _freeDay;
     private SchedulePlan? _plan;
+    private bool _filling = true;
 
     public SchedulesPage(AppSession session, MainWindow window)
     {
@@ -22,94 +32,234 @@ public sealed class SchedulesPage : UserControl
         _window = window;
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         bar.Children.Add(_plans);
-        var generate = new Button { Content = "Generate" };
-        generate.Click += (_, _) => Generate();
-        var copy = new Button { Content = "Copy CRNs" };
-        copy.Click += (_, _) => CopyCrns();
-        var ics = new Button { Content = "Export .ics" };
-        ics.Click += (_, _) => ExportIcs();
-        var image = new Button { Content = "Export image" };
-        image.Click += (_, _) => ExportImage();
-        bar.Children.Add(generate);
-        bar.Children.Add(copy);
-        bar.Children.Add(ics);
-        bar.Children.Add(image);
-        var root = new StackPanel { Spacing = 12, Padding = new Thickness(12) };
-        root.Children.Add(Chrome.Heading("Schedules"));
-        root.Children.Add(bar);
-        root.Children.Add(_body);
-        Content = new ScrollViewer { Content = root };
-        _plans.SelectionChanged += (_, _) => ShowPlan();
+        bar.Children.Add(Button("Generate", (_, _) => Generate()));
+        bar.Children.Add(Button("Ideal week\u2026", (_, _) => _ = SurveyAsync()));
+        bar.Children.Add(Button("Copy CRNs", (_, _) => CopyCrns()));
+        bar.Children.Add(Button("Export .ics", (_, _) => ExportIcs()));
+        bar.Children.Add(Button("Export image", (_, _) => ExportImage()));
+        bar.Children.Add(Button("Add to Windows Calendar", (_, _) => _ = AddToCalendarAsync()));
+        var filterScroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Auto,
+            VerticalScrollMode = ScrollMode.Disabled,
+            Content = Filters(),
+        };
+        var left = new StackPanel { Spacing = 10 };
+        left.Children.Add(Chrome.Heading("Schedules"));
+        left.Children.Add(new ScrollViewer { Content = bar, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollMode = ScrollMode.Disabled });
+        left.Children.Add(filterScroll);
+        left.Children.Add(_courses);
+        left.Children.Add(_conflicts);
+        left.Children.Add(_results);
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var scroll = new ScrollViewer { Content = left };
+        root.Children.Add(scroll);
+        Grid.SetRow(_week, 1);
+        root.Children.Add(_week);
+        Content = root;
+        Padding = new Thickness(12);
+        _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         ReloadPlans();
     }
 
     public void ExportIcs()
     {
-        if (_plan is null || _session.Term is null || _session.Index is null) return;
+        if (_plan is null || _session.Term is null) return;
         var sections = SelectedSections().ToList();
         var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Sanitize(_plan.Name) + ".ics");
         File.WriteAllText(path, IcsWriter.Write(_plan.Name, _session.Term, sections));
         _window.SetStatus("Wrote " + path);
     }
 
+    private async Task AddToCalendarAsync()
+    {
+        if (_plan is null || _session.Term is null || _session.Index is null) return;
+        var term = _session.Term;
+        var sections = SelectedSections().ToList();
+        var result = await WindowsCalendar.AddAsync(term, sections, key => _session.Index?.Course(key)?.Title);
+        if (result.UsedIcsFallback) ExportIcs();
+        _window.SetStatus(result.Message);
+    }
+
+    private async Task SurveyAsync()
+    {
+        if (_plan is null) return;
+        var campuses = _session.Index?.CampusNames.ToList() ?? [];
+        var survey = new PreferencesSurvey(_plan.Preferences ?? new SchedulePreferences(), campuses);
+        var dialog = new ContentDialog
+        {
+            Title = "Your ideal week",
+            PrimaryButtonText = "Done",
+            CloseButtonText = "Cancel",
+            XamlRoot = XamlRoot ?? _window.Content.XamlRoot,
+            Content = new ScrollViewer { Content = survey, MaxHeight = 640 },
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        var preferences = survey.Read();
+        _session.Store.UpdatePlan(_plan.Id, plan => plan.Preferences = preferences.IsDefault ? null : preferences);
+        ShowPlan();
+    }
+
+    private StackPanel Filters()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var full = _hideFull = new CheckBox { Content = "Hide full sections" };
+        var honors = _includeHonors = new CheckBox { Content = "Include honors" };
+        var online = _includeOnline = new CheckBox { Content = "Include online" };
+        var seats = _minSeats = new NumberBox { Header = "Min seats", Minimum = 0, Maximum = 50, Width = 100, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline };
+        var campus = _campus = new ComboBox { Header = "Campus", MinWidth = 140 };
+        campus.Items.Add("Any campus");
+        foreach (var name in _session.Index?.CampusNames ?? []) campus.Items.Add(name);
+        var free = _freeDay = new ComboBox { Header = "Free day", MinWidth = 120 };
+        free.Items.Add(new DayChoice(null, "No free day"));
+        free.Items.Add(new DayChoice(DaySet.Friday, "Friday"));
+        free.Items.Add(new DayChoice(DaySet.Monday, "Monday"));
+        free.Items.Add(new DayChoice(DaySet.Thursday | DaySet.Friday, "Thu and Fri"));
+        void Save()
+        {
+            if (_filling || _plan is null) return;
+            _session.Store.UpdatePlan(_plan.Id, plan =>
+            {
+                plan.Filters.HideFullSections = full.IsChecked == true;
+                plan.Filters.IncludeHonors = honors.IsChecked == true;
+                plan.Filters.IncludeOnline = online.IsChecked == true;
+                plan.Filters.MinSeats = double.IsNaN(seats.Value) ? 0 : (int)seats.Value;
+                plan.Filters.Campus = campus.SelectedItem as string == "Any campus" ? null : campus.SelectedItem as string;
+                plan.Filters.FreeDays = (free.SelectedItem as DayChoice)?.Days ?? DaySet.None;
+            });
+        }
+        full.Checked += (_, _) => Save();
+        full.Unchecked += (_, _) => Save();
+        honors.Checked += (_, _) => Save();
+        honors.Unchecked += (_, _) => Save();
+        online.Checked += (_, _) => Save();
+        online.Unchecked += (_, _) => Save();
+        seats.ValueChanged += (_, _) => Save();
+        campus.SelectionChanged += (_, _) => Save();
+        free.SelectionChanged += (_, _) => Save();
+        row.Children.Add(full);
+        row.Children.Add(honors);
+        row.Children.Add(online);
+        row.Children.Add(seats);
+        row.Children.Add(campus);
+        row.Children.Add(free);
+        return row;
+    }
+
     private void ReloadPlans()
     {
         var term = _session.Term?.Code ?? _session.Index?.Term.Code ?? BundledCatalog.DefaultTerm;
+        _filling = true;
         _plans.Items.Clear();
         foreach (var plan in _session.Store.PlansIn(term))
             _plans.Items.Add(new PlanChoice(plan));
         if (_plans.Items.Count == 0)
             _plans.Items.Add(new PlanChoice(_session.Store.CreatePlan("Schedule", term)));
         _plans.SelectedIndex = 0;
+        _filling = false;
+        ShowPlan();
     }
 
     private void ShowPlan()
     {
         _plan = (_plans.SelectedItem as PlanChoice)?.Plan;
-        _body.Children.Clear();
-        if (_plan is null || _session.Index is null) return;
-        _body.Children.Add(Chrome.Body(_plan.IsPrimary ? "Primary plan for this term." : "A saved plan."));
+        _courses.Children.Clear();
+        _results.Children.Clear();
+        if (_plan is null || _session.Index is null)
+        {
+            _courses.Children.Add(Chrome.Body(_session.Error ?? "The catalog is still loading."));
+            return;
+        }
+        PaintFilters();
+        _courses.Children.Add(Chrome.Body(_plan.Preferences?.Summary(8) ?? "No ideal week yet. Describe one, or set it in the survey."));
         foreach (var course in _plan.Courses)
-        {
-            var title = _session.Index.Course(course.Key)?.Title ?? "";
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            row.Children.Add(new TextBlock { Text = $"{course.Key}  {title}" + (course.IsRequired ? "" : "  · optional"), VerticalAlignment = VerticalAlignment.Center });
-            var remove = new Button { Content = "Remove" };
-            var key = course.Key;
-            remove.Click += (_, _) =>
-            {
-                _session.Store.RemoveCourse(key, _plan.Id, _session.Index.Sections(key).Select(s => s.Crn));
-                ReloadPlans();
-            };
-            row.Children.Add(remove);
-            _body.Children.Add(row);
-        }
+            _courses.Children.Add(CourseBlock(course));
         var selected = SelectedSections().ToList();
-        if (selected.Count > 1)
+        var conflicts = ScheduleConflicts.Find(selected);
+        _conflicts.Text = conflicts.Count == 0 ? "" : string.Join("\n", conflicts.Select(conflict => conflict.Summary));
+        _week.Show(selected, key => _plan.Course(key)?.ColorIndex ?? 0, _session.Store.Preferences.CalendarStartHour, _session.Store.Preferences.CalendarEndHour, _session.Store.Preferences.ShowWeekends);
+    }
+
+    private void PaintFilters()
+    {
+        if (_plan is null || _hideFull is null || _includeHonors is null || _includeOnline is null || _minSeats is null || _campus is null || _freeDay is null) return;
+        _filling = true;
+        _hideFull.IsChecked = _plan.Filters.HideFullSections;
+        _includeHonors.IsChecked = _plan.Filters.IncludeHonors;
+        _includeOnline.IsChecked = _plan.Filters.IncludeOnline;
+        _minSeats.Value = _plan.Filters.MinSeats;
+        _campus.SelectedItem = _plan.Filters.Campus ?? "Any campus";
+        _freeDay.SelectedIndex = 0;
+        for (var i = 0; i < _freeDay.Items.Count; i++)
+            if (_freeDay.Items[i] is DayChoice choice && choice.Days is DaySet days && days == _plan.Filters.FreeDays) _freeDay.SelectedIndex = i;
+        _filling = false;
+    }
+
+    private StackPanel CourseBlock(PlanCourse course)
+    {
+        var index = _session.Index!;
+        var title = index.Course(course.Key)?.Title ?? "";
+        var panel = new StackPanel { Spacing = 4 };
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        header.Children.Add(new TextBlock { Text = $"{course.Key}  {title}", VerticalAlignment = VerticalAlignment.Center, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var required = new CheckBox { Content = "Required", IsChecked = course.IsRequired, VerticalAlignment = VerticalAlignment.Center };
+        var key = course.Key;
+        required.Checked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetRequired(true, key, plan));
+        required.Unchecked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetRequired(false, key, plan));
+        var colors = new ComboBox { MinWidth = 90 };
+        for (var i = 0; i < CourseColorPalette.Count; i++) colors.Items.Add(new ColorChoice(i));
+        colors.SelectedIndex = Math.Clamp(course.ColorIndex, 0, CourseColorPalette.Count - 1);
+        colors.SelectionChanged += (_, _) =>
         {
-            for (var i = 0; i < selected.Count; i++)
-                for (var j = i + 1; j < selected.Count; j++)
-                    if (selected[i].ConflictsWith(selected[j]))
-                        _body.Children.Add(Chrome.Body($"Conflict: {selected[i].CourseKey} CRN {selected[i].Crn} overlaps {selected[j].CourseKey} CRN {selected[j].Crn}."));
-        }
-        _body.Children.Add(Week(selected));
-        var wish = new TextBox { PlaceholderText = "Describe the week: no classes before 10, Fridays off, choir Tuesdays 6-8pm", TextWrapping = TextWrapping.Wrap, AcceptsReturn = true, MinHeight = 64 };
-        var apply = new Button { Content = "Read that sentence", HorizontalAlignment = HorizontalAlignment.Left };
-        apply.Click += (_, _) =>
+            if (colors.SelectedItem is ColorChoice color)
+                _session.Store.UpdatePlan(_plan!.Id, plan =>
+                {
+                    var item = plan.Course(key);
+                    if (item is not null) item.ColorIndex = color.Index;
+                });
+            ShowPlan();
+        };
+        var remove = new Button { Content = "Remove" };
+        remove.Click += (_, _) =>
         {
-            var parsed = PreferenceParser.Interpret(wish.Text, _plan.Preferences ?? new SchedulePreferences());
-            if (parsed.Message is not null)
-            {
-                _body.Children.Add(Chrome.Body(parsed.Message));
-                return;
-            }
-            _session.Store.UpdatePlan(_plan.Id, plan => plan.Preferences = parsed.Preferences);
-            _body.Children.Add(Chrome.Body(parsed.Preferences.Summary(6)));
+            _session.Store.RemoveCourse(key, _plan!.Id, index.Sections(key).Select(section => section.Crn));
             ReloadPlans();
         };
-        _body.Children.Add(Chrome.Body("Preferences: " + (_plan.Preferences?.Summary(6) ?? "No preferences yet")));
-        _body.Children.Add(wish);
-        _body.Children.Add(apply);
+        header.Children.Add(required);
+        header.Children.Add(colors);
+        header.Children.Add(remove);
+        panel.Children.Add(header);
+        var crns = index.Sections(key).Select(section => section.Crn).ToHashSet(StringComparer.Ordinal);
+        foreach (var section in index.Sections(key))
+        {
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(12, 0, 0, 0) };
+            var consider = new CheckBox { Content = "Consider", IsChecked = !course.ExcludedCRNs.Contains(section.Crn) };
+            var crn = section.Crn;
+            consider.Checked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(false, crn, key, plan));
+            consider.Unchecked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(true, crn, key, plan));
+            var onCalendar = new CheckBox { Content = "On the calendar", IsChecked = _plan!.SelectedCRNs.Contains(section.Crn) };
+            onCalendar.Checked += (_, _) =>
+            {
+                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan));
+                ShowPlan();
+            };
+            onCalendar.Unchecked += (_, _) =>
+            {
+                _session.Store.UpdatePlan(_plan!.Id, plan =>
+                {
+                    if (plan.SelectedCRNs.Contains(crn)) PlanEditing.SetSection(null, crns, plan);
+                });
+                ShowPlan();
+            };
+            line.Children.Add(consider);
+            line.Children.Add(onCalendar);
+            line.Children.Add(new TextBlock { Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn} \u00b7 {section.ScheduleSummary} \u00b7 {section.SeatsLabel}", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(line);
+        }
+        return panel;
     }
 
     private void Generate()
@@ -125,29 +275,30 @@ public sealed class SchedulesPage : UserControl
             MaxCredits = _session.Index.Course(course.Key)?.MaxCredits,
         }).ToList();
         var result = ScheduleGenerator.Generate(inputs, _plan.Filters, _plan.Preferences);
-        _body.Children.Add(Chrome.Heading(result.TotalFound == 0 ? "No schedules" : $"{result.TotalFound} schedules"));
-        foreach (var suggestion in result.Suggestions) _body.Children.Add(Chrome.Body(suggestion));
+        _results.Children.Clear();
+        _results.Children.Add(Chrome.Heading(result.TotalFound == 0 ? "No schedules" : $"{result.TotalFound} schedules"));
+        foreach (var suggestion in result.Suggestions) _results.Children.Add(Chrome.Body(suggestion.ToString() ?? ""));
         foreach (var schedule in result.Schedules.Take(12))
         {
             var panel = new StackPanel { Spacing = 4 };
-            panel.Children.Add(new TextBlock { Text = string.Join(" · ", schedule.Sections.Select(s => $"{s.CourseKey} {s.Crn}")) + $"  ·  {schedule.Score:0}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            panel.Children.Add(Chrome.Body(string.Join(" · ", schedule.Reasons)));
+            panel.Children.Add(new TextBlock { Text = string.Join(" \u00b7 ", schedule.Sections.Select(section => $"{section.CourseKey} {section.Crn}")) + $"  \u00b7  {schedule.Score:0}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+            if (schedule.Reasons.Count > 0) panel.Children.Add(Chrome.Body(string.Join(" \u00b7 ", schedule.Reasons)));
             var use = new Button { Content = "Use these sections", HorizontalAlignment = HorizontalAlignment.Left };
             var crns = schedule.Crns.ToList();
             use.Click += (_, _) =>
             {
                 _session.Store.UpdatePlan(_plan.Id, plan => plan.SelectedCRNs = crns);
                 _window.RefreshUpNext();
-                ReloadPlans();
+                ShowPlan();
             };
             panel.Children.Add(use);
-            _body.Children.Add(Chrome.Card(panel));
+            _results.Children.Add(Chrome.Card(panel));
         }
     }
 
     private void CopyCrns()
     {
-        var crns = SelectedSections().Select(s => s.Crn).ToList();
+        var crns = SelectedSections().Select(section => section.Crn).ToList();
         var package = new DataPackage();
         package.SetText(crns.Count == 0 ? "" : string.Join(", ", crns));
         Clipboard.SetContent(package);
@@ -156,9 +307,9 @@ public sealed class SchedulesPage : UserControl
 
     private void ExportImage()
     {
-        var sections = SelectedSections().ToList();
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "term-organize-week.bmp");
-        WeekImage.Write(path, sections);
+        if (_plan is null || _session.Index is null) return;
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Sanitize(_plan.Name) + ".png");
+        File.WriteAllBytes(path, ScheduleExporter.PngBytes(_plan, _session.Index));
         _window.SetStatus("Wrote " + path);
     }
 
@@ -172,104 +323,32 @@ public sealed class SchedulesPage : UserControl
         }
     }
 
-    private static StackPanel Week(IReadOnlyList<CourseSection> sections)
+    private static Button Button(string label, RoutedEventHandler click)
     {
-        var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock { Text = "Week", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        if (sections.Count == 0)
-        {
-            panel.Children.Add(Chrome.Body("Generate a schedule, then use a result to put sections on the calendar."));
-            return panel;
-        }
-        foreach (var section in sections)
-            panel.Children.Add(Chrome.Body($"{section.CourseKey} · {section.ScheduleSummary} · {section.Meetings.FirstOrDefault()?.LocationLabel}"));
-        return panel;
+        var button = new Button { Content = label };
+        button.Click += click;
+        return button;
     }
 
     private sealed class PlanChoice(SchedulePlan plan)
     {
         public SchedulePlan Plan { get; } = plan;
-        public override string ToString() => plan.IsPrimary ? plan.Name + " · Primary" : plan.Name;
+        public override string ToString() => plan.IsPrimary ? plan.Name + " \u00b7 Primary" : plan.Name;
+    }
+
+    private sealed record DayChoice(DaySet? Days, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    private sealed record ColorChoice(int Index)
+    {
+        public override string ToString() => CourseColor.At(Index).Name;
     }
 
     private static string Sanitize(string name)
     {
         foreach (var ch in Path.GetInvalidFileNameChars()) name = name.Replace(ch, '-');
         return string.IsNullOrWhiteSpace(name) ? "schedule" : name;
-    }
-}
-
-internal static class WeekImage
-{
-    public static void Write(string path, IReadOnlyList<CourseSection> sections)
-    {
-        const int width = 900;
-        const int height = 520;
-        var pixels = new byte[width * height * 3];
-        for (var i = 0; i < pixels.Length; i += 3)
-        {
-            pixels[i] = 248;
-            pixels[i + 1] = 246;
-            pixels[i + 2] = 242;
-        }
-        var day = 0;
-        foreach (var section in sections)
-        {
-            foreach (var meeting in section.WeeklyMeetings)
-            {
-                if (meeting.Start is not int start || meeting.End is not int end) continue;
-                foreach (var index in meeting.Days.Indices)
-                {
-                    var x = 40 + index * 120;
-                    var y = 40 + (start - 8 * 60) * 400 / (12 * 60);
-                    var h = Math.Max(8, (end - start) * 400 / (12 * 60));
-                    Fill(pixels, width, height, x, y, 100, h, (byte)(40 + day * 30), (byte)(16 + day * 10), 46);
-                }
-            }
-            day++;
-        }
-        WriteBmp(path, width, height, pixels);
-    }
-
-    private static void Fill(byte[] pixels, int width, int height, int x, int y, int w, int h, byte r, byte g, byte b)
-    {
-        for (var row = Math.Max(0, y); row < Math.Min(height, y + h); row++)
-            for (var col = Math.Max(0, x); col < Math.Min(width, x + w); col++)
-            {
-                var i = (row * width + col) * 3;
-                pixels[i] = b;
-                pixels[i + 1] = g;
-                pixels[i + 2] = r;
-            }
-    }
-
-    private static void WriteBmp(string path, int width, int height, byte[] rgb)
-    {
-        var stride = (width * 3 + 3) & ~3;
-        var pixelBytes = stride * height;
-        using var stream = File.Create(path);
-        using var writer = new BinaryWriter(stream);
-        writer.Write((byte)'B');
-        writer.Write((byte)'M');
-        writer.Write(54 + pixelBytes);
-        writer.Write(0);
-        writer.Write(54);
-        writer.Write(40);
-        writer.Write(width);
-        writer.Write(height);
-        writer.Write((short)1);
-        writer.Write((short)24);
-        writer.Write(0);
-        writer.Write(pixelBytes);
-        writer.Write(2835);
-        writer.Write(2835);
-        writer.Write(0);
-        writer.Write(0);
-        var pad = new byte[stride - width * 3];
-        for (var row = height - 1; row >= 0; row--)
-        {
-            writer.Write(rgb, row * width * 3, width * 3);
-            if (pad.Length > 0) writer.Write(pad);
-        }
     }
 }

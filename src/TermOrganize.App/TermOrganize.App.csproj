@@ -17,6 +17,10 @@
     <Description>Unofficial Northeastern course search, schedules, and degree plans.</Description>
     <Version>1.0.0</Version>
     <Authors>Term Organize contributors</Authors>
+    <AssemblyName>TermOrganize.App</AssemblyName>
+    <WindowsAppSDKBackgroundTask>true</WindowsAppSDKBackgroundTask>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <StartupObject>TermOrganize.Program</StartupObject>
     <PackageCertificateKeyFile Condition="'$(PackageCertificateKeyFile)' == '' and Exists('TermOrganize.pfx')">TermOrganize.pfx</PackageCertificateKeyFile>
   </PropertyGroup>
 

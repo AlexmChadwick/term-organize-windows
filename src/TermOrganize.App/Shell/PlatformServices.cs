@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Win32;
 using Microsoft.Windows.AppNotifications;
@@ -21,51 +22,36 @@ public static class PlatformServices
         RegisterPdfOpenWith();
         _ = JumpListAsync();
         _timer = window.DispatcherQueue.CreateTimer();
-        _timer.Interval = TimeSpan.FromMinutes(Math.Max(5, session.Store.Preferences.SeatCheckMinutes));
         _timer.Tick += (_, _) => CheckSeats(session, window);
-        if (session.Store.Preferences.AutoRefreshSeats) _timer.Start();
+        ApplyBackground(session);
+        ReplayAlerts(window);
+    }
+
+    /// <summary>Applies the seat-check interval, the in-app timer, and the checks that survive Exit.</summary>
+    public static void ApplyBackground(AppSession session)
+    {
+        var preferences = session.Store.Preferences;
+        if (_timer is not null)
+        {
+            _timer.Stop();
+            _timer.Interval = TimeSpan.FromMinutes(Math.Max(5, preferences.SeatCheckMinutes));
+            if (preferences.BackgroundRefreshEnabled) _timer.Start();
+        }
+        if (preferences.BackgroundRefreshEnabled)
+        {
+            SeatScheduler.Register(preferences);
+            _ = SeatBackgroundRegistration.RegisterAsync(preferences);
+        }
+        else
+        {
+            SeatScheduler.Remove();
+            SeatBackgroundRegistration.Remove();
+        }
     }
 
     public static void CheckSeats(AppSession session, Window window) => _ = CheckSeatsAsync(session, window);
 
-    private static async Task CheckSeatsAsync(AppSession session, Window window)
-    {
-        var items = session.Store.Watchlist.ToList();
-        if (items.Count == 0) return;
-        var live = new Dictionary<string, IReadOnlyDictionary<CourseKey, IReadOnlyList<CourseSection>>>(StringComparer.Ordinal);
-        foreach (var group in items.GroupBy(item => item.TermCode))
-        {
-            try
-            {
-                var keys = group.Select(item => item.CourseKey).Distinct().ToList();
-                var banner = await BannerClient.Shared.FetchSectionsAsync(group.Key, keys);
-                var map = new Dictionary<CourseKey, IReadOnlyList<CourseSection>>();
-                foreach (var pair in banner)
-                    map[pair.Key] = CatalogBuilder.MakeSections(pair.Value);
-                live[group.Key] = map;
-            }
-            catch (Exception)
-            {
-                if (session.Index?.Term.Code == group.Key)
-                {
-                    var map = new Dictionary<CourseKey, IReadOnlyList<CourseSection>>();
-                    foreach (var key in group.Select(item => item.CourseKey).Distinct())
-                        map[key] = session.Index.Sections(key);
-                    live[group.Key] = map;
-                }
-            }
-        }
-        var outcome = WatchlistComparison.Compare(session.Store.Watchlist, live);
-        foreach (var item in outcome.Items)
-            session.Store.UpdateWatchItem(item);
-        foreach (var alert in outcome.Alerts)
-        {
-            if (!Toast(alert.Title, alert.Body))
-                window.DispatcherQueue.TryEnqueue(() => window.SetUpNext(alert.Title + " — " + alert.Body));
-        }
-    }
-
-    private static bool Toast(string title, string body)
+    public static bool ShowToast(string title, string body)
     {
         try
         {
@@ -81,6 +67,30 @@ public static class PlatformServices
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    private static async Task CheckSeatsAsync(AppSession session, Window window)
+    {
+        try
+        {
+            var outcome = await SeatCheckHost.RunAsync(session.Store);
+            var alert = outcome.Alerts.FirstOrDefault();
+            if (alert is null) return;
+            window.DispatcherQueue.TryEnqueue(() => window.SetUpNext(alert.Title + " \u2014 " + alert.Body));
+        }
+        catch (Exception)
+        {
+            // The last stored counts stay. The next check tries again.
+        }
+    }
+
+    private static void ReplayAlerts(Window window)
+    {
+        foreach (var (title, body) in SeatAlertLog.Take())
+        {
+            if (!ShowToast(title, body))
+                window.SetStatus(title + " \u2014 " + body);
         }
     }
 

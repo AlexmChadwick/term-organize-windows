@@ -20,7 +20,7 @@ On a machine that is not Windows, `dotnet build src/TermOrganize.App/TermOrganiz
 
 ## Build the app (Windows)
 
-Requires the .NET 9 SDK and Windows 10 version 1809 or later.
+Requires the .NET 9 SDK and Windows 10 version 2004 (build 19041) or later.
 
 ```powershell
 dotnet publish src/TermOrganize.App/TermOrganize.App.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -o artifacts/unpackaged

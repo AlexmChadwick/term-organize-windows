@@ -28,7 +28,7 @@ dotnet publish src/TermOrganize.App/TermOrganize.App.csproj -c Release -p:Platfo
 
 Run `artifacts\unpackaged\TermOrganize.App.exe`. An unpackaged build registers `termorganize://`, `neuclasssearch://`, and .pdf Open With for the current user.
 
-GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` tests the library, then publishes a signed MSIX and an unpackaged zip. The workflow creates a self-signed `CN=Term Organize` certificate at build time. That certificate is not in source control. Trust it before installing the MSIX. This repository was not built on Windows here, so that workflow has not been run.
+GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and an unpackaged zip. The package job runs even when the tests fail. The workflow creates a self-signed `CN=Term Organize` certificate at build time. That certificate is not in source control. Trust it before installing the MSIX. The WinUI project has not been compiled in this environment.
 
 ## Data
 

@@ -1,0 +1,18 @@
+# Windows Git checks out with core.autocrlf=true unless a file is marked binary.
+# The catalog and the gzip snapshot contain 0x0A as payload bytes. Converting
+# those bytes to CRLF makes the LZFSE decoder reject the fixture.
+*.catalog binary
+*.gz binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pfx binary
+*.snk binary
+*.zip binary
+*.bundle binary
+*.dll binary
+*.exe binary

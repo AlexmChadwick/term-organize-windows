@@ -128,3 +128,5 @@ original vector drawing and does not use SF Symbols.
 
 The Windows build adds PdfPig (Apache-2.0, PDF text extraction), the Windows App SDK, and
 H.NotifyIcon.WinUI (MIT). The SearchNEU-derived code listed above is the only SearchNEU code.
+The managed LZFSE decoder in `src/TermOrganize.Core/Catalog/LzfseDecoder.cs` follows the
+block format of [lzfse](https://github.com/lzfse/lzfse) (BSD-3-Clause, Copyright (c) 2015-2016, Apple Inc.).

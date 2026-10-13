@@ -20,7 +20,8 @@ public partial class App
 
 public sealed partial class MainWindow
 {
-    internal TextBlock DragRegion = null!;
+    internal Grid TitleBar = null!;
+    internal ColumnDefinition CaptionSpacer = null!;
     internal ComboBox TermPicker = null!;
     internal NavigationView Nav = null!;
     internal Grid Host = null!;

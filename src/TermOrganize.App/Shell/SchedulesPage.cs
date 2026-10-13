@@ -30,7 +30,7 @@ public sealed class SchedulesPage : UserControl
     {
         _session = session;
         _window = window;
-        var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var bar = new WrapLayout { Spacing = 8 };
         bar.Children.Add(_plans);
         bar.Children.Add(Button("Generate", (_, _) => Generate()));
         bar.Children.Add(Button("Ideal week\u2026", (_, _) => _ = SurveyAsync()));
@@ -39,17 +39,10 @@ public sealed class SchedulesPage : UserControl
         bar.Children.Add(Button("Print", (_, _) => Print(WinRT.Interop.WindowNative.GetWindowHandle(_window))));
         bar.Children.Add(Button("Export image", (_, _) => ExportImage()));
         bar.Children.Add(Button("Add to Windows Calendar", (_, _) => _ = AddToCalendarAsync()));
-        var filterScroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollMode = ScrollMode.Auto,
-            VerticalScrollMode = ScrollMode.Disabled,
-            Content = Filters(),
-        };
-        var left = new StackPanel { Spacing = 10 };
+        var left = new StackPanel { Spacing = 12 };
         left.Children.Add(Chrome.Heading("Schedules"));
-        left.Children.Add(new ScrollViewer { Content = bar, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollMode = ScrollMode.Disabled });
-        left.Children.Add(filterScroll);
+        left.Children.Add(bar);
+        left.Children.Add(Filters());
         left.Children.Add(_courses);
         left.Children.Add(_conflicts);
         left.Children.Add(_results);
@@ -61,7 +54,7 @@ public sealed class SchedulesPage : UserControl
         Grid.SetRow(_week, 1);
         root.Children.Add(_week);
         Content = root;
-        Padding = new Thickness(12);
+        Padding = Chrome.PagePadding;
         _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         ReloadPlans();
     }
@@ -120,9 +113,9 @@ public sealed class SchedulesPage : UserControl
         ShowPlan();
     }
 
-    private StackPanel Filters()
+    private WrapLayout Filters()
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new WrapLayout { Spacing = 8 };
         var full = _hideFull = new CheckBox { Content = "Hide full sections" };
         var honors = _includeHonors = new CheckBox { Content = "Include honors" };
         var online = _includeOnline = new CheckBox { Content = "Include online" };

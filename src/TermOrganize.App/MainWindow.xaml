@@ -7,23 +7,22 @@
     Title="Term Organize">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="40" />
+            <RowDefinition Height="48" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="TitleBar" Grid.Row="0" Padding="12,0,0,0" ColumnSpacing="12">
+        <Grid x:Name="TitleBar" Grid.Row="0" Padding="16,0,0,0" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="DragColumn" Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="160" />
+                <ColumnDefinition x:Name="CaptionSpacer" Width="138" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="TitleText" Text="Term Organize" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
-            <TextBlock x:Name="DragRegion" Grid.Column="0" />
-            <ComboBox x:Name="TermPicker" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" PlaceholderText="Term" SelectionChanged="TermChanged" />
-            <Button x:Name="ThemeButton" Grid.Column="2" Content="Theme" Click="ToggleTheme" VerticalAlignment="Center" />
+            <TextBlock Text="Term Organize" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+            <ComboBox x:Name="TermPicker" Grid.Column="1" MinWidth="120" MaxWidth="320" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" PlaceholderText="Term" SelectionChanged="TermChanged" />
+            <Button Grid.Column="2" Content="Theme" Click="ToggleTheme" VerticalAlignment="Center" Margin="0,0,8,0" />
         </Grid>
 
         <MenuBar Grid.Row="1" VerticalAlignment="Top">
@@ -57,7 +56,7 @@
             Grid.Row="2"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="True"
-            PaneDisplayMode="Left"
+            PaneDisplayMode="Auto"
             SelectionChanged="NavChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Search" Tag="search" />
@@ -72,7 +71,7 @@
             <Grid x:Name="Host" />
         </NavigationView>
 
-        <TextBlock x:Name="Disclaimer" Grid.Row="3" Margin="12,4" TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
+        <TextBlock x:Name="Disclaimer" Grid.Row="3" Margin="16,8" TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
 
         <tb:TaskbarIcon x:Name="Tray" ToolTipText="Term Organize">
             <tb:TaskbarIcon.IconSource>

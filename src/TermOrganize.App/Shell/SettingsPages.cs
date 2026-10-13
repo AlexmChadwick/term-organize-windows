@@ -18,7 +18,13 @@ public sealed class SettingsPage : UserControl
     {
         _session = session;
         _window = window;
-        var panel = new StackPanel { Spacing = 10, Padding = new Thickness(12) };
+        var panel = new StackPanel
+        {
+            Spacing = 16,
+            Padding = Chrome.PagePadding,
+            MaxWidth = 720,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
         Content = new ScrollViewer { Content = panel };
         panel.Children.Add(Chrome.Heading("Settings"));
         panel.Children.Add(Chrome.Body(LegalText.UnofficialNotice));

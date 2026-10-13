@@ -26,24 +26,18 @@ public sealed class DegreePage : UserControl
         _session = session;
         _window = window;
         _requirements = new DegreeRequirementsPane(session, window, PaintTerms);
-        var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var bar = new WrapLayout { Spacing = 8 };
         bar.Children.Add(_plans);
         bar.Children.Add(Make("Export PDF", (_, _) => ExportPdf()));
         bar.Children.Add(Make("Print", (_, _) => Print(WinRT.Interop.WindowNative.GetWindowHandle(_window))));
         bar.Children.Add(Make("Autofill schedule", (_, _) => Autofill()));
         bar.Children.Add(Make("Check when courses are offered", (_, _) => _ = LoadHistoryAsync(force: true)));
-        var left = new StackPanel { Spacing = 10 };
+        var left = new StackPanel { Spacing = 12 };
         left.Children.Add(Chrome.Heading("Degree plans"));
-        left.Children.Add(new ScrollViewer
-        {
-            Content = bar,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollMode = ScrollMode.Auto,
-            VerticalScrollMode = ScrollMode.Disabled,
-        });
+        left.Children.Add(bar);
         left.Children.Add(_terms);
         var scroll = new ScrollViewer { Content = left };
-        Content = new PaneSplit(scroll, _requirements, 460) { Padding = new Thickness(12) };
+        Content = new PaneSplit(scroll, _requirements, 460) { Padding = Chrome.PagePadding };
         _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         Reload();
     }
@@ -223,7 +217,7 @@ public sealed class DegreePage : UserControl
         }
         var line = course.Key?.ToString() ?? course.Label;
         row.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var buttons = new WrapLayout { Spacing = 8 };
         var id = course.Id;
         if (!completed)
         {
@@ -259,7 +253,7 @@ public sealed class DegreePage : UserControl
                 DegreeEquivalenceEditing.Declare(_session.Store, _plan.Id, key, countsAs, "Renumbered");
                 ShowPlan();
             };
-            var pair = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var pair = new WrapLayout { Spacing = 8 };
             pair.Children.Add(counts);
             pair.Children.Add(save);
             row.Children.Add(pair);
@@ -267,9 +261,9 @@ public sealed class DegreePage : UserControl
         return row;
     }
 
-    private StackPanel AddCourseRow()
+    private WrapLayout AddCourseRow()
     {
-        var add = new TextBox { PlaceholderText = "Add a course, such as CS 3000", MinWidth = 180 };
+        var add = new TextBox { PlaceholderText = "Add a course, such as CS 3000", MinWidth = 160 };
         var termBox = new ComboBox { MinWidth = 140 };
         if (_plan is not null)
         {
@@ -286,14 +280,14 @@ public sealed class DegreePage : UserControl
                 DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
             ShowPlan();
         };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new WrapLayout { Spacing = 8 };
         row.Children.Add(add);
         row.Children.Add(termBox);
         row.Children.Add(button);
         return row;
     }
 
-    private StackPanel AddTermRow()
+    private WrapLayout AddTermRow()
     {
         var season = new ComboBox();
         foreach (var value in Enum.GetValues<PlanSeason>()) season.Items.Add(new SeasonChoice(value));
@@ -307,7 +301,7 @@ public sealed class DegreePage : UserControl
                 DegreePlanEditing.AddTerm(new DegreePlanTerm { Season = choice.Season, Year = (int)year.Value }, plan));
             ShowPlan();
         };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new WrapLayout { Spacing = 8 };
         row.Children.Add(season);
         row.Children.Add(year);
         row.Children.Add(button);

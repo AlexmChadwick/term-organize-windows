@@ -9,6 +9,9 @@ namespace TermOrganize;
 
 internal static class Chrome
 {
+    /// <summary>Page inset. 16 is the compact step on the Fluent 4px grid, so an 800px window still has room for the pane.</summary>
+    public static Thickness PagePadding { get; } = new(16);
+
     public static readonly string[] CourseColors =
     [
         "#C8102E", "#0D6E6E", "#1F4B99", "#8A5A00", "#5C4B8A",

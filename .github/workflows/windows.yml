@@ -69,6 +69,29 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path artifacts/unpackaged/* -DestinationPath artifacts/TermOrganize-win-x64.zip -Force
 
+      - name: Capture UI sweep screenshots
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $out = Join-Path ${{ github.workspace }} "artifacts/ui-sweep"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $exe = Join-Path ${{ github.workspace }} "artifacts/unpackaged/TermOrganize.App.exe"
+          & $exe --screenshot-sweep "$out"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pngs = @(Get-ChildItem $out -Filter *.png)
+          if ($pngs.Count -lt 36) {
+            $errorLog = Join-Path $out "error.txt"
+            if (Test-Path $errorLog) { Get-Content $errorLog }
+            throw "UI sweep wrote $($pngs.Count) screenshots; expected 36."
+          }
+
+      - name: Upload UI sweep
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-sweep
+          path: artifacts/ui-sweep/*.png
+          if-no-files-found: error
+
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:

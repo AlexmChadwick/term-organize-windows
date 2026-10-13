@@ -29,7 +29,7 @@ public sealed class SearchPage : UserControl
     public SearchPage(AppSession session)
     {
         _session = session;
-        var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var filters = new WrapLayout { Spacing = 8 };
         filters.Children.Add(_open);
         filters.Children.Add(_honors);
         filters.Children.Add(_subjects);
@@ -39,24 +39,17 @@ public sealed class SearchPage : UserControl
         filters.Children.Add(_campus);
         filters.Children.Add(_all);
         filters.Children.Add(_clear);
-        var filterScroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollMode = ScrollMode.Auto,
-            VerticalScrollMode = ScrollMode.Disabled,
-            Content = filters,
-        };
         var left = new Grid();
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         left.Children.Add(_query);
-        Grid.SetRow(filterScroll, 1);
-        left.Children.Add(filterScroll);
+        Grid.SetRow(filters, 1);
+        left.Children.Add(filters);
         Grid.SetRow(_results, 2);
         left.Children.Add(_results);
-        var scroll = new ScrollViewer { Content = _detail, Padding = new Thickness(4, 0, 0, 0) };
-        Content = new PaneSplit(left, scroll, 420) { Padding = new Thickness(12) };
+        var scroll = new ScrollViewer { Content = _detail, Padding = new Thickness(16, 0, 0, 0) };
+        Content = new PaneSplit(left, scroll, 420) { Padding = Chrome.PagePadding };
 
         _query.TextChanged += (_, _) => { if (!_filling) Run(_query.Text); };
         _open.Checked += (_, _) => Apply();

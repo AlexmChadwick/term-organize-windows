@@ -22,6 +22,11 @@ public partial class App : Application
         Session = new AppSession();
         Window = new MainWindow();
         Window.Activate();
+        if (ScreenshotSweep.Enabled)
+        {
+            _ = Window.RunScreenshotSweepAsync();
+            return;
+        }
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
         Window.HandleActivation(activation);
         PlatformServices.Start(Window, Session);

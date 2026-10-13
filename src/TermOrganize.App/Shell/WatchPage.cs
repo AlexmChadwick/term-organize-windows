@@ -21,7 +21,7 @@ public sealed class WatchPage : UserControl
     {
         _session = session;
         _window = window;
-        var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var bar = new WrapLayout { Spacing = 8 };
         bar.Children.Add(Chrome.Heading("Watchlist"));
         var check = new Button { Content = "Check now", VerticalAlignment = VerticalAlignment.Center };
         check.Click += (_, _) =>
@@ -39,8 +39,8 @@ public sealed class WatchPage : UserControl
         left.Children.Add(bar);
         Grid.SetRow(_table, 1);
         left.Children.Add(_table);
-        var right = new ScrollViewer { Content = _detail, Padding = new Thickness(8, 0, 0, 0) };
-        Content = new PaneSplit(left, right, 520) { Padding = new Thickness(12) };
+        var right = new ScrollViewer { Content = _detail, Padding = new Thickness(16, 0, 0, 0) };
+        Content = new PaneSplit(left, right, 520) { Padding = Chrome.PagePadding };
         _table.RowChosen += tag =>
         {
             if (tag is WatchItem item)

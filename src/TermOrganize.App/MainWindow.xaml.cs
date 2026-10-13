@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -26,15 +27,24 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        SystemBackdrop = new MicaBackdrop();
+        try
+        {
+            SystemBackdrop = new MicaBackdrop();
+        }
+        catch (Exception)
+        {
+            // Some Windows SKUs have no Mica backdrop. The Fluent theme still applies.
+        }
         ExtendsContentIntoTitleBar = true;
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        SetTitleBar(TitleBar);
+        Activated += (_, _) => SyncCaptionSpacer();
         AppWindow.Closing += (_, args) =>
         {
             if (_exiting) return;
             args.Cancel = true;
             AppWindow.Hide();
         };
-        SetTitleBar(DragRegion);
         Disclaimer.Text = LegalText.UnofficialNotice + "  Course information is © Northeastern University.";
         App.Session.Changed += () => DispatcherQueue.TryEnqueue(RefreshChrome);
         ApplySavedTheme();
@@ -376,8 +386,61 @@ public sealed partial class MainWindow : Window
 
     private bool _welcomeOpen;
 
+    private void SyncCaptionSpacer()
+    {
+        var inset = AppWindow.TitleBar.RightInset;
+        if (inset > 1) CaptionSpacer.Width = new GridLength(inset);
+    }
+
+    public void ResizeForCapture(int width, int height)
+    {
+        AppWindow.Move(new Windows.Graphics.PointInt32(32, 32));
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(width, height));
+        SyncCaptionSpacer();
+    }
+
+    public async Task RunScreenshotSweepAsync()
+    {
+        try
+        {
+            await ScreenshotSweep.CaptureAsync(this);
+            try { FinishSweep(); } catch (Exception) { }
+            Environment.Exit(0);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                Directory.CreateDirectory(ScreenshotSweep.Directory);
+                File.WriteAllText(Path.Combine(ScreenshotSweep.Directory, "error.txt"), ex.ToString());
+            }
+            catch (Exception)
+            {
+                // The exit code is what the workflow checks.
+            }
+            Environment.Exit(1);
+        }
+    }
+
+    public void PrepareCapture(string tag)
+    {
+        Select(tag);
+        if (tag == "search" && Host.Children.FirstOrDefault() is SearchPage search)
+            search.Run("CS");
+    }
+
+    public void ApplyCaptureTheme(ElementTheme theme) =>
+        ((FrameworkElement)Content).RequestedTheme = theme;
+
+    public void FinishSweep()
+    {
+        _exiting = true;
+        Tray.Dispose();
+    }
+
     private void ScheduleWelcome()
     {
+        if (ScreenshotSweep.Enabled) return;
         if (App.Session.Store.Preferences.HasCompletedOnboarding) return;
         if (Content is not FrameworkElement root)
         {

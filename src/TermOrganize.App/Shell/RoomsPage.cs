@@ -36,16 +36,10 @@ public sealed class RoomsPage : UserControl
     {
         _session = session;
         _index = session.Index;
-        var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var filters = new WrapLayout { Spacing = 8 };
         filters.Children.Add(_when);
         filters.Children.Add(_campus);
         filters.Children.Add(_showBusy);
-        var filterScroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollMode = ScrollMode.Disabled,
-            Content = filters,
-        };
         var middle = new Grid { RowSpacing = 0 };
         middle.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         middle.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -54,7 +48,7 @@ public sealed class RoomsPage : UserControl
         middle.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var tools = new StackPanel { Spacing = 8 };
         tools.Children.Add(_search);
-        tools.Children.Add(filterScroll);
+        tools.Children.Add(filters);
         middle.Children.Add(tools);
         Grid.SetRow(_axis, 1);
         middle.Children.Add(_axis);
@@ -72,9 +66,9 @@ public sealed class RoomsPage : UserControl
         Grid.SetRow(_buildings, 1);
         buildingPane.Children.Add(_buildings);
 
-        var inspectorScroll = new ScrollViewer { Content = _inspector, Padding = new Thickness(4, 0, 0, 0) };
+        var inspectorScroll = new ScrollViewer { Content = _inspector, Padding = new Thickness(16, 0, 0, 0) };
         var right = new PaneSplit(middle, inspectorScroll, 420);
-        Content = new PaneSplit(buildingPane, right, 240) { Padding = new Thickness(12) };
+        Content = new PaneSplit(buildingPane, right, 240) { Padding = Chrome.PagePadding };
 
         _when.Items.Add(new WhenChoice(null, "Right now"));
         for (var minutes = RoomAvailability.FirstClassMinute; minutes < RoomAvailability.LastClassMinute; minutes += 30)
@@ -311,7 +305,7 @@ public sealed class RoomsPage : UserControl
             dayBox.Items.Add(new DayChoice(weekday));
         for (var i = 0; i < dayBox.Items.Count; i++)
             if (dayBox.Items[i] is DayChoice choice && choice.Day == moment.Weekday) dayBox.SelectedIndex = i;
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var controls = new WrapLayout { Spacing = 8 };
         controls.Children.Add(mode);
         controls.Children.Add(dayBox);
         _inspector.Children.Add(controls);

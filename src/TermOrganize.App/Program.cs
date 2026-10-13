@@ -16,7 +16,8 @@ public static class Program
     public static void Main(string[] args)
     {
         WinRT.ComWrappersSupport.InitializeComWrappers();
-        if (Has(args, "--seat-check"))
+        ScreenshotSweep.Configure(args);
+        if (!ScreenshotSweep.Enabled && Has(args, "--seat-check"))
         {
             UnpackagedBootstrap.Try();
             SeatCheckHost.RunHeadless();

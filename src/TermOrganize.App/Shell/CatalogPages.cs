@@ -15,7 +15,7 @@ public sealed class SubjectsPage : UserControl
         var detail = new StackPanel { Spacing = 6 };
         var split = Split(list, new ScrollViewer { Content = detail, Padding = new Thickness(16, 0, 0, 0) });
         Content = split;
-        Padding = new Thickness(12);
+        Padding = Chrome.PagePadding;
         if (session.Index is null)
         {
             Chrome.Fill(detail, "Subjects", session.Error ?? "The catalog is still loading.");
@@ -32,6 +32,7 @@ public sealed class SubjectsPage : UserControl
             foreach (var course in session.Index.CoursesInSubject(code).Take(200))
                 detail.Children.Add(Chrome.Body($"{course.Code}  {course.Title}  ·  {course.CreditsLabel}"));
         };
+        if (list.Items.Count > 0) list.SelectedIndex = 0;
     }
 
     internal static Grid Split(FrameworkElement left, FrameworkElement right) => new PaneSplit(left, right, 320);
@@ -41,7 +42,7 @@ public sealed class SavedPage : UserControl
 {
     public SavedPage(AppSession session)
     {
-        var panel = new StackPanel { Spacing = 8, Padding = new Thickness(12) };
+        var panel = new StackPanel { Spacing = 12, Padding = Chrome.PagePadding, MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Left };
         Content = new ScrollViewer { Content = panel };
         var term = session.Term?.Code ?? session.Index?.Term.Code;
         panel.Children.Add(Chrome.Heading("Saved"));
@@ -75,7 +76,7 @@ public sealed class ProfessorsPage : UserControl
     public ProfessorsPage(AppSession session)
     {
         _session = session;
-        var root = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
+        var root = new Grid { Padding = Chrome.PagePadding, RowSpacing = 8 };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

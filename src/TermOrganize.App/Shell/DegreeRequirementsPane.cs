@@ -33,7 +33,7 @@ internal sealed class DegreeRequirementsPane : UserControl
         _session = session;
         _window = window;
         _onEdited = onEdited;
-        Content = new ScrollViewer { Content = _body, Padding = new Thickness(8, 0, 0, 12) };
+        Content = new ScrollViewer { Content = _body, Padding = new Thickness(16, 0, 0, 16) };
     }
 
     public void Show(DegreePlan plan, OfferingHistory history)

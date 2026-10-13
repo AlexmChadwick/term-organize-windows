@@ -68,6 +68,30 @@
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
+  <!-- C++ copies this DLL from the native targets. The managed SDK does not,
+       and MakeAppx requires the manifest Path to exist at the package root.
+       Foundation 1.8.260803002 is the version WindowsAppSDK 1.8.260921001 pulls in.
+       The Pkg* property is only generated for direct PackageReferences. -->
+  <PropertyGroup Condition="'$(IsWindowsBuild)' == 'true' and '$(WindowsAppSDKBackgroundTask)' == 'true'">
+    <UniversalBGTaskArchitecture>$([System.String]::Copy('$(Platform)').ToLowerInvariant())</UniversalBGTaskArchitecture>
+    <UniversalBGTaskDll Condition="'$(PkgMicrosoft_WindowsAppSDK_Foundation)' != ''">$(PkgMicrosoft_WindowsAppSDK_Foundation)/runtimes/win-$(UniversalBGTaskArchitecture)/native/Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll</UniversalBGTaskDll>
+    <UniversalBGTaskDll Condition="!Exists('$(UniversalBGTaskDll)')">$(NuGetPackageRoot)/microsoft.windowsappsdk.foundation/1.8.260803002/runtimes/win-$(UniversalBGTaskArchitecture)/native/Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll</UniversalBGTaskDll>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsWindowsBuild)' == 'true' and Exists('$(UniversalBGTaskDll)')">
+    <Content Include="$(UniversalBGTaskDll)" Link="Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <AppxPackagePayload Include="$(UniversalBGTaskDll)">
+      <TargetPath>Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll</TargetPath>
+    </AppxPackagePayload>
+  </ItemGroup>
+
+  <Target Name="RequireUniversalBackgroundTaskDll"
+          BeforeTargets="_ComputeAppxPackagePayload"
+          Condition="'$(AppxPackage)' == 'true' and '$(WindowsAppSDKBackgroundTask)' == 'true'">
+    <Error Condition="!Exists('$(UniversalBGTaskDll)')"
+           Text="Windows App SDK background task DLL was not found at '$(UniversalBGTaskDll)'. Package.appxmanifest declares it at the package root." />
+  </Target>
+
   <ItemGroup Condition="'$(EnableWindowsTargeting)' == 'true' and !$([MSBuild]::IsOSPlatform('Windows'))">
     <Compile Include="NonWindowsXamlStubs.cs" />
     <Page Remove="**\*.xaml" />

@@ -2,7 +2,7 @@
 
 This is the Windows port of [Term Organize](https://github.com/AlexmChadwick/Northeastern-Term-Organize) (SwiftUI). Logic is in `src/TermOrganize.Core`. The shell is `src/TermOrganize.App` (WinUI 3, Mica, light and dark). Each row was checked against the Swift sources and the C# that is in this tree.
 
-The core library was built and tested on Linux (.NET 9): `dotnet test` passed 298 tests, 0 failed, including the live Banner term-list smoke test. `dotnet build TermOrganize.sln` succeeded on Linux. On Linux the WinUI project is an empty stub (`EnableDefaultCompileItems` is false), so that build does not compile XAML or the shell. The WinUI project was not compiled or run on Windows here. `.github/workflows/windows.yml` is the Windows build, test, MSIX, and unpackaged zip. It runs on push, pull request, and `workflow_dispatch`. This environment’s only git remote is Origin, which did not expose a way to start that workflow.
+The core library was built and tested on Linux (.NET 9): `dotnet test` passed 298 tests, 0 failed, including the live Banner term-list smoke test. `dotnet build TermOrganize.sln` succeeded on Linux. On Linux the WinUI project is an empty stub (`EnableDefaultCompileItems` is false), so that build does not compile XAML or the shell. The WinUI project was not compiled or run on Windows here. `.github/workflows/windows.yml` is the Windows build, test, MSIX, and unpackaged zip. It runs on push, pull request, and `workflow_dispatch`. Pushing `main` is the trigger. This environment’s only git remote is Origin. After the push, `origin pr list` reported that the repository was not found, so no windows-latest run could be started or watched from here.
 
 | Swift area | Windows | Status |
 | --- | --- | --- |

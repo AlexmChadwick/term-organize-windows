@@ -1,0 +1,68 @@
+name: Windows
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Test the core library
+        run: dotnet test tests/TermOrganize.Core.Tests/TermOrganize.Core.Tests.csproj -c Release --nologo
+
+      - name: Create a CI signing certificate
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=Term Organize" -KeyUsage DigitalSignature -FriendlyName "Term Organize CI" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $password = ConvertTo-SecureString -String "termorganize" -Force -AsPlainText
+          New-Item -ItemType Directory -Force -Path src/TermOrganize.App, artifacts/msix | Out-Null
+          Export-PfxCertificate -Cert $cert -FilePath src/TermOrganize.App/TermOrganize.pfx -Password $password
+
+      - name: Package MSIX
+        run: >
+          dotnet publish src/TermOrganize.App/TermOrganize.App.csproj
+          -c Release
+          -p:Platform=x64
+          -p:RuntimeIdentifier=win-x64
+          -p:WindowsPackageType=MSIX
+          -p:GenerateAppxPackageOnBuild=true
+          -p:AppxPackageSigningEnabled=true
+          -p:PackageCertificateKeyFile=TermOrganize.pfx
+          -p:PackageCertificatePassword=termorganize
+          -p:AppxBundle=Never
+          -p:AppxPackageDir=${{ github.workspace }}/artifacts/msix/
+
+      - name: Publish unpackaged app
+        run: >
+          dotnet publish src/TermOrganize.App/TermOrganize.App.csproj
+          -c Release
+          -p:Platform=x64
+          -p:RuntimeIdentifier=win-x64
+          -p:SelfContained=true
+          -p:WindowsAppSDKSelfContained=true
+          -p:WindowsPackageType=None
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:EnableMsixTooling=false
+          -o artifacts/unpackaged
+
+      - name: Zip the unpackaged build
+        shell: pwsh
+        run: Compress-Archive -Path artifacts/unpackaged/* -DestinationPath artifacts/TermOrganize-win-x64.zip -Force
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: term-organize-windows
+          path: |
+            artifacts/TermOrganize-win-x64.zip
+            artifacts/msix/**/*.msix
+          if-no-files-found: error

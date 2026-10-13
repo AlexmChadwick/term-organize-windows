@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="TermOrganize.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:tb="using:H.NotifyIcon"
+    Title="Term Organize">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="TitleBar" Grid.Row="0" Padding="12,0,0,0" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="DragColumn" Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="160" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="TitleText" Text="Term Organize" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock x:Name="DragRegion" Grid.Column="0" />
+            <ComboBox x:Name="TermPicker" Grid.Column="1" MinWidth="220" VerticalAlignment="Center" PlaceholderText="Term" SelectionChanged="TermChanged" />
+            <Button x:Name="ThemeButton" Grid.Column="2" Content="Theme" Click="ToggleTheme" VerticalAlignment="Center" />
+        </Grid>
+
+        <MenuBar Grid.Row="1" VerticalAlignment="Top">
+            <MenuBarItem Title="File">
+                <MenuFlyoutItem Text="New Schedule" Click="MenuNewSchedule" />
+                <MenuFlyoutItem Text="New Degree Plan" Click="MenuNewDegree" />
+                <MenuFlyoutItem Text="Import Degree Plan…" Click="MenuImport" />
+                <MenuFlyoutItem Text="Export" Click="MenuExport" />
+                <MenuFlyoutItem Text="Print Degree Plan" Click="MenuPrint" />
+            </MenuBarItem>
+            <MenuBarItem Title="View">
+                <MenuFlyoutItem Text="Search" Click="MenuSearch" />
+                <MenuFlyoutItem Text="Subjects" Click="MenuSubjects" />
+                <MenuFlyoutItem Text="Saved" Click="MenuSaved" />
+                <MenuFlyoutItem Text="Professors" Click="MenuProfessors" />
+                <MenuFlyoutItem Text="Free Rooms" Click="MenuRooms" />
+                <MenuFlyoutItem Text="Schedules" Click="MenuSchedules" />
+                <MenuFlyoutItem Text="Degree Plans" Click="MenuDegree" />
+                <MenuFlyoutItem Text="Watchlist" Click="MenuWatch" />
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="Reload" Click="MenuReload" />
+                <MenuFlyoutItem Text="Show or Hide Sidebar" Click="MenuPane" />
+            </MenuBarItem>
+            <MenuBarItem Title="Help">
+                <MenuFlyoutItem Text="Settings" Click="MenuSettings" />
+            </MenuBarItem>
+        </MenuBar>
+
+        <NavigationView
+            x:Name="Nav"
+            Grid.Row="2"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            PaneDisplayMode="Left"
+            SelectionChanged="NavChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Search" Tag="search" />
+                <NavigationViewItem Content="Subjects" Tag="subjects" />
+                <NavigationViewItem Content="Saved" Tag="saved" />
+                <NavigationViewItem Content="Professors" Tag="professors" />
+                <NavigationViewItem Content="Free Rooms" Tag="rooms" />
+                <NavigationViewItem Content="Schedules" Tag="schedules" />
+                <NavigationViewItem Content="Degree Plans" Tag="degree" />
+                <NavigationViewItem Content="Watchlist" Tag="watch" />
+            </NavigationView.MenuItems>
+            <Grid x:Name="Host" />
+        </NavigationView>
+
+        <TextBlock x:Name="Disclaimer" Grid.Row="3" Margin="12,4" TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
+
+        <tb:TaskbarIcon x:Name="Tray" ToolTipText="Term Organize">
+            <tb:TaskbarIcon.IconSource>
+                <tb:GeneratedIconSource Text="T" Foreground="White" Background="#C8102E" FontWeight="Bold" />
+            </tb:TaskbarIcon.IconSource>
+            <tb:TaskbarIcon.TrayPopup>
+                <Border Padding="16" Width="280" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Up Next" FontWeight="SemiBold" />
+                        <TextBlock x:Name="UpNextText" Text="No class on the calendar yet." TextWrapping="Wrap" />
+                        <Button Content="Open Term Organize" Click="ShowWindow" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Border>
+            </tb:TaskbarIcon.TrayPopup>
+            <tb:TaskbarIcon.ContextFlyout>
+                <MenuFlyout>
+                    <MenuFlyoutItem Text="Show Term Organize" Click="ShowWindow" />
+                    <MenuFlyoutItem Text="Check seats now" Click="CheckSeats" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Exit" Click="ExitApp" />
+                </MenuFlyout>
+            </tb:TaskbarIcon.ContextFlyout>
+        </tb:TaskbarIcon>
+    </Grid>
+</Window>

@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  <!-- Windows, and a Linux check with -p:EnableWindowsTargeting=true, compile the shell.
+       A plain Linux build of the solution keeps the empty stub below. -->
+  <PropertyGroup>
+    <IsWindowsBuild Condition="$([MSBuild]::IsOSPlatform('Windows')) or '$(EnableWindowsTargeting)' == 'true'">true</IsWindowsBuild>
+    <IsWindowsBuild Condition="'$(IsWindowsBuild)' == ''">false</IsWindowsBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsWindowsBuild)' == 'true'">
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
@@ -22,10 +29,26 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <StartupObject>TermOrganize.Program</StartupObject>
     <PackageCertificateKeyFile Condition="'$(PackageCertificateKeyFile)' == '' and Exists('TermOrganize.pfx')">TermOrganize.pfx</PackageCertificateKeyFile>
+    <DefaultItemExcludes>$(DefaultItemExcludes);NonWindowsXamlStubs.cs</DefaultItemExcludes>
   </PropertyGroup>
 
-  <!-- The WinUI project only compiles on Windows. Linux builds of the solution skip it. -->
-  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+  <!-- The markup compiler and MSIX tools are Windows executables. On Linux the
+       same C# still compiles against the Windows App SDK reference assemblies.
+       NonWindowsXamlStubs.cs supplies InitializeComponent and the x:Name fields
+       the markup compiler would have generated. -->
+  <PropertyGroup Condition="'$(EnableWindowsTargeting)' == 'true' and !$([MSBuild]::IsOSPlatform('Windows'))">
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
+    <AppxPackage>false</AppxPackage>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultXamlItems>false</EnableDefaultXamlItems>
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <AppxGeneratePrisForPortableLibrariesEnabled>false</AppxGeneratePrisForPortableLibrariesEnabled>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsWindowsBuild)' != 'true'">
     <TargetFramework>net9.0</TargetFramework>
     <EnableDefaultItems>false</EnableDefaultItems>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
@@ -34,7 +57,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  <ItemGroup Condition="'$(IsWindowsBuild)' == 'true'">
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.3.2" />
@@ -45,5 +68,11 @@
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
-  <Target Name="BuildOnNonWindows" Condition="!$([MSBuild]::IsOSPlatform('Windows'))" />
+  <ItemGroup Condition="'$(EnableWindowsTargeting)' == 'true' and !$([MSBuild]::IsOSPlatform('Windows'))">
+    <Compile Include="NonWindowsXamlStubs.cs" />
+    <Page Remove="**\*.xaml" />
+    <ApplicationDefinition Remove="**\*.xaml" />
+  </ItemGroup>
+
+  <Target Name="BuildOnNonWindows" Condition="'$(IsWindowsBuild)' != 'true'" />
 </Project>

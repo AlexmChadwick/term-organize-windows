@@ -6,7 +6,7 @@ Unofficial Windows desktop app for searching Northeastern University courses, bu
 
 The window follows the Mac app: one window, a sidebar (Search, Subjects, Saved, Professors, Free Rooms, Schedules, Degree Plans, Watchlist), a term picker in the title bar, and the unofficial-status line along the bottom. Light and dark themes use Fluent styling and a Mica backdrop. Closing the window leaves the app in the tray; Exit on the tray menu quits. The tray flyout is Up Next.
 
-All of the course, schedule, and degree logic lives in `src/TermOrganize.Core`, a .NET 9 class library that builds and tests on Linux. The WinUI 3 shell in `src/TermOrganize.App` compiles only on Windows. How each Swift area was carried over is in [PARITY.md](PARITY.md).
+All of the course, schedule, and degree logic lives in `src/TermOrganize.Core`, a .NET 9 class library that builds and tests on Linux. The WinUI 3 shell in `src/TermOrganize.App` is what Windows packages. On Linux, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj -p:EnableWindowsTargeting=true -p:Platform=x64` compiles that shell's C# against the Windows App SDK reference assemblies. The XAML compiler does not run on Linux. How each Swift area was carried over is in [PARITY.md](PARITY.md).
 
 ## Build the logic (Linux, macOS, or Windows)
 
@@ -16,7 +16,7 @@ Requires the .NET 9 SDK.
 dotnet test tests/TermOrganize.Core.Tests/TermOrganize.Core.Tests.csproj
 ```
 
-On a machine that is not Windows, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj` succeeds without compiling the WinUI shell.
+On a machine that is not Windows, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj` succeeds without compiling the WinUI shell. Add `-p:EnableWindowsTargeting=true -p:Platform=x64` to compile the shell C# against the Windows App SDK references.
 
 ## Build the app (Windows)
 
@@ -28,7 +28,7 @@ dotnet publish src/TermOrganize.App/TermOrganize.App.csproj -c Release -p:Platfo
 
 Run `artifacts\unpackaged\TermOrganize.App.exe`. An unpackaged build registers `termorganize://`, `neuclasssearch://`, and .pdf Open With for the current user.
 
-GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and an unpackaged zip. The package job runs even when the tests fail. The workflow creates a self-signed `CN=Term Organize` certificate at build time. That certificate is not in source control. Trust it before installing the MSIX. The WinUI project has not been compiled in this environment.
+GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and an unpackaged zip. The package job runs even when the tests fail. The workflow creates a self-signed `CN=Term Organize` certificate at build time. That certificate is not in source control. Trust it before installing the MSIX. The shell C# has been compiled on Linux against those references. The XAML compiler and the packaged app have not been run in this environment.
 
 ## Data
 

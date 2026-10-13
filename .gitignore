@@ -1,5 +1,6 @@
 bin/
 obj/
+.mono/
 .vs/
 *.user
 *.pfx

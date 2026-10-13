@@ -13,17 +13,29 @@ public partial class App : Application
 
     public App()
     {
+        UnhandledException += (_, e) =>
+        {
+            if (ScreenshotSweep.Enabled)
+            {
+                ScreenshotSweep.WriteError(e.Exception);
+                e.Handled = true;
+                Environment.Exit(1);
+            }
+            e.Handled = true;
+        };
         InitializeComponent();
-        UnhandledException += (_, e) => e.Handled = true;
+        ScreenshotSweep.Log("app constructed");
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        ScreenshotSweep.Log("launch");
         Session = new AppSession();
         Window = new MainWindow();
         Window.Activate();
         if (ScreenshotSweep.Enabled)
         {
+            ScreenshotSweep.Log("sweep scheduled");
             _ = Window.RunScreenshotSweepAsync();
             return;
         }

@@ -48,6 +48,13 @@
     <AppxGeneratePrisForPortableLibrariesEnabled>false</AppxGeneratePrisForPortableLibrariesEnabled>
   </PropertyGroup>
 
+  <!-- windows-latest does not have the Windows App SDK runtime installed.
+       An unpackaged publish has to carry it. MSIX builds keep the framework package. -->
+  <PropertyGroup Condition="'$(WindowsPackageType)' == 'None' and $([MSBuild]::IsOSPlatform('Windows')) and '$(RuntimeIdentifier)' != ''">
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(IsWindowsBuild)' != 'true'">
     <TargetFramework>net9.0</TargetFramework>
     <EnableDefaultItems>false</EnableDefaultItems>

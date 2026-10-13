@@ -404,20 +404,13 @@ public sealed partial class MainWindow : Window
         try
         {
             await ScreenshotSweep.CaptureAsync(this);
-            try { FinishSweep(); } catch (Exception) { }
+            try { FinishSweep(); } catch (Exception ex) { ScreenshotSweep.Log("finish: " + ex); }
             Environment.Exit(0);
         }
         catch (Exception ex)
         {
-            try
-            {
-                Directory.CreateDirectory(ScreenshotSweep.Directory);
-                File.WriteAllText(Path.Combine(ScreenshotSweep.Directory, "error.txt"), ex.ToString());
-            }
-            catch (Exception)
-            {
-                // The exit code is what the workflow checks.
-            }
+            ScreenshotSweep.WriteError(ex);
+            try { FinishSweep(); } catch (Exception) { }
             Environment.Exit(1);
         }
     }

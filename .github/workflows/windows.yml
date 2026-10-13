@@ -69,29 +69,6 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path artifacts/unpackaged/* -DestinationPath artifacts/TermOrganize-win-x64.zip -Force
 
-      - name: Capture UI sweep screenshots
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $out = Join-Path ${{ github.workspace }} "artifacts/ui-sweep"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $exe = Join-Path ${{ github.workspace }} "artifacts/unpackaged/TermOrganize.App.exe"
-          & $exe --screenshot-sweep "$out"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $pngs = @(Get-ChildItem $out -Filter *.png)
-          if ($pngs.Count -lt 36) {
-            $errorLog = Join-Path $out "error.txt"
-            if (Test-Path $errorLog) { Get-Content $errorLog }
-            throw "UI sweep wrote $($pngs.Count) screenshots; expected 36."
-          }
-
-      - name: Upload UI sweep
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-sweep
-          path: artifacts/ui-sweep/*.png
-          if-no-files-found: error
-
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
@@ -100,3 +77,87 @@ jobs:
             artifacts/TermOrganize-win-x64.zip
             artifacts/msix/**/*.msix
           if-no-files-found: error
+
+      - name: Capture UI sweep screenshots
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "${{ github.workspace }}"
+          $out = Join-Path $root "artifacts/ui-sweep"
+          $unpackaged = Join-Path $root "artifacts/unpackaged"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          function Show-SweepDiagnostics {
+            Write-Host "--- ui-sweep directory ---"
+            Get-ChildItem $out -Force | Format-Table Name, Length, LastWriteTime -AutoSize | Out-String | Write-Host
+            foreach ($logName in 'error.txt','sweep.log','stdout.txt','stderr.txt') {
+              $log = Join-Path $out $logName
+              Write-Host "--- $logName ---"
+              if (Test-Path $log) { Get-Content $log -Raw -ErrorAction SilentlyContinue | Write-Host }
+              else { Write-Host "(missing)" }
+            }
+            Write-Host "--- Application event log (TermOrganize) ---"
+            try {
+              $events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue |
+                Where-Object { $_.Message -match 'TermOrganize' -or $_.ProviderName -match 'TermOrganize' } |
+                Select-Object -First 40)
+              if ($events.Count -eq 0) { Write-Host "(no matching Application events)" }
+              foreach ($event in $events) {
+                Write-Host ("[{0:u}] {1} id={2} {3}" -f $event.TimeCreated, $event.ProviderName, $event.Id, $event.LevelDisplayName)
+                Write-Host $event.Message
+              }
+            } catch {
+              Write-Host "event log: $($_.Exception.Message)"
+            }
+          }
+
+          $runtime = Get-ChildItem -Path $unpackaged -Recurse -Filter Microsoft.WindowsAppRuntime.dll -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $runtime) {
+            Write-Host "--- unpackaged directory ---"
+            Get-ChildItem $unpackaged -Force | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+            "Microsoft.WindowsAppRuntime.dll is missing. The unpackaged publish must set WindowsAppSDKSelfContained=true." | Set-Content -Path (Join-Path $out "error.txt")
+            Show-SweepDiagnostics
+            throw "Unpackaged publish is missing Microsoft.WindowsAppRuntime.dll."
+          }
+
+          $exe = Join-Path $unpackaged "TermOrganize.App.exe"
+          if (-not (Test-Path $exe)) {
+            "Missing $exe" | Set-Content -Path (Join-Path $out "error.txt")
+            Show-SweepDiagnostics
+            throw "Missing $exe"
+          }
+          $stdout = Join-Path $out "stdout.txt"
+          $stderr = Join-Path $out "stderr.txt"
+          # A GUI-subsystem WinExe returns from `& $exe` before the process exits, and -Wait has no timeout.
+          $p = Start-Process -FilePath $exe -ArgumentList '--screenshot-sweep',"`"$out`"" -PassThru -WorkingDirectory $unpackaged -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $timedOut = $false
+          try {
+            Wait-Process -Id $p.Id -Timeout 300 -ErrorAction Stop
+          } catch {
+            $timedOut = $true
+          }
+          if (-not $p.HasExited) {
+            $timedOut = $true
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            $p.WaitForExit(10000) | Out-Null
+          }
+          $p.Refresh()
+          $exit = $null
+          if ($p.HasExited) { $exit = $p.ExitCode }
+          $pngs = @(Get-ChildItem $out -Filter *.png -ErrorAction SilentlyContinue)
+          if ($timedOut -or $null -eq $exit -or $exit -ne 0 -or $pngs.Count -lt 36) {
+            Show-SweepDiagnostics
+            if ($timedOut) { throw "UI sweep timed out after 300 seconds (exit $exit, $($pngs.Count) screenshots)." }
+            if ($null -eq $exit -or $exit -ne 0) { throw "UI sweep exit code $exit; wrote $($pngs.Count) screenshots; expected 36." }
+            throw "UI sweep wrote $($pngs.Count) screenshots; expected 36."
+          }
+          Write-Host "UI sweep wrote $($pngs.Count) screenshots, exit $exit."
+
+      - name: Upload UI sweep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-sweep
+          path: artifacts/ui-sweep/
+          if-no-files-found: warn

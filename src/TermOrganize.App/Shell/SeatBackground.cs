@@ -57,9 +57,11 @@ internal static class UnpackagedBootstrap
         {
             Microsoft.Windows.ApplicationModel.DynamicDependency.Bootstrap.Initialize(0x00010008);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // A packaged app already has the runtime and throws here.
+            // A self-contained unpackaged app loads it from the exe directory instead.
+            ScreenshotSweep.Log("bootstrap: " + ex.GetType().Name + ": " + ex.Message);
         }
     }
 }

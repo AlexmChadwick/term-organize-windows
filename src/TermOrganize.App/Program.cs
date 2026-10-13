@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using System.Runtime.CompilerServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
@@ -12,35 +13,50 @@ namespace TermOrganize;
 /// </summary>
 public static class Program
 {
+    [ModuleInitializer]
+    internal static void PrepareScreenshotSweep() => ScreenshotSweep.EnsureHooks();
+
     [STAThread]
     public static void Main(string[] args)
     {
-        WinRT.ComWrappersSupport.InitializeComWrappers();
-        ScreenshotSweep.Configure(args);
-        if (!ScreenshotSweep.Enabled && Has(args, "--seat-check"))
+        try
         {
+            ScreenshotSweep.EnsureHooks();
+            ScreenshotSweep.Configure(args);
+            ScreenshotSweep.Log("process start");
+            WinRT.ComWrappersSupport.InitializeComWrappers();
+            if (!ScreenshotSweep.Enabled && Has(args, "--seat-check"))
+            {
+                UnpackagedBootstrap.Try();
+                SeatCheckHost.RunHeadless();
+                return;
+            }
+            if (Has(args, "-RegisterForBGTaskServer"))
+            {
+                SeatBackgroundServer.RegisterAndPump();
+                return;
+            }
+            if (Has(args, "-RegisterWidgetProvider"))
+            {
+                UnpackagedBootstrap.Try();
+                UpNextWidgetHost.RegisterAndPump();
+                return;
+            }
             UnpackagedBootstrap.Try();
-            SeatCheckHost.RunHeadless();
-            return;
+            ScreenshotSweep.Log("winui start");
+            Application.Start(_ =>
+            {
+                var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
+                SynchronizationContext.SetSynchronizationContext(context);
+                new App();
+            });
         }
-        if (Has(args, "-RegisterForBGTaskServer"))
+        catch (Exception ex)
         {
-            SeatBackgroundServer.RegisterAndPump();
-            return;
+            ScreenshotSweep.WriteError(ex);
+            if (ScreenshotSweep.Enabled) Environment.Exit(1);
+            throw;
         }
-        if (Has(args, "-RegisterWidgetProvider"))
-        {
-            UnpackagedBootstrap.Try();
-            UpNextWidgetHost.RegisterAndPump();
-            return;
-        }
-        UnpackagedBootstrap.Try();
-        Application.Start(_ =>
-        {
-            var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
-            SynchronizationContext.SetSynchronizationContext(context);
-            new App();
-        });
     }
 
     private static bool Has(string[] args, string flag) =>

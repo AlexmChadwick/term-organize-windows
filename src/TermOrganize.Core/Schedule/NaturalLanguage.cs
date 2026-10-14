@@ -19,6 +19,9 @@ public static partial class PreferenceParser
 {
     public const int MaxDescriptionLength = 1500;
 
+    /// <summary>The sentence the survey shows. The release smoke parses this same text.</summary>
+    public const string ExampleSentence = "No classes before 10, I have robotics club Tuesdays and Thursdays 6\u20138pm, I\u2019d like Fridays off and a lunch break";
+
     public sealed class Interpretation
     {
         public required SchedulePreferences Preferences { get; init; }
@@ -29,7 +32,11 @@ public static partial class PreferenceParser
 
     public static Interpretation Interpret(string? text, SchedulePreferences? basePreferences = null)
     {
-        var description = (text ?? "").Trim();
+        var description = (text ?? "").Trim()
+            .Replace('\u2019', '\'')
+            .Replace('\u2018', '\'')
+            .Replace('\u2013', '-')
+            .Replace('\u2014', '-');
         var baseline = (basePreferences ?? new SchedulePreferences()).Clone();
         if (description.Length == 0)
             return Fail(baseline, "Describe the schedule you want first.");
@@ -303,11 +310,70 @@ public static partial class PreferenceParser
     {
         var lowered = " " + text.ToLowerInvariant() + " ";
         var parts = new List<string> { lowered };
-        foreach (var separator in new[] { ",", ";", ".", "\n", " and ", " but " })
+        foreach (var separator in new[] { ",", ";", ".", "\n", " but " })
         {
             parts = parts.SelectMany(part => part.Split(separator, StringSplitOptions.None)).ToList();
         }
+        parts = parts.SelectMany(SplitAnd).ToList();
         return parts.Select(part => part.Trim()).Where(part => part.Length > 0).ToList();
+    }
+
+    /// <summary>"Tuesdays and Thursdays 6-8" is one block. Other "and" joins still split.</summary>
+    private static IEnumerable<string> SplitAnd(string part)
+    {
+        var pieces = part.Split(" and ", StringSplitOptions.None);
+        if (pieces.Length < 2)
+        {
+            yield return part;
+            yield break;
+        }
+        var current = pieces[0];
+        for (var i = 1; i < pieces.Length; i++)
+        {
+            if (JoinsWeekdays(current, pieces[i])) current = current + " and " + pieces[i];
+            else
+            {
+                yield return current;
+                current = pieces[i];
+            }
+        }
+        yield return current;
+    }
+
+    private static bool JoinsWeekdays(string left, string right) =>
+        EndsWithWeekday(left) && StartsWithWeekday(right);
+
+    private static bool EndsWithWeekday(string text)
+    {
+        var trimmed = text.Trim();
+        foreach (var (name, _) in Weekdays)
+        {
+            if (EndsWithWord(trimmed, name) || EndsWithWord(trimmed, name + "s")) return true;
+        }
+        return false;
+    }
+
+    private static bool StartsWithWeekday(string text)
+    {
+        var trimmed = text.Trim();
+        foreach (var (name, _) in Weekdays)
+        {
+            if (StartsWithWord(trimmed, name) || StartsWithWord(trimmed, name + "s")) return true;
+        }
+        return false;
+    }
+
+    private static bool EndsWithWord(string text, string word)
+    {
+        if (!text.EndsWith(word, StringComparison.Ordinal)) return false;
+        var index = text.Length - word.Length;
+        return index == 0 || !char.IsLetter(text[index - 1]);
+    }
+
+    private static bool StartsWithWord(string text, string word)
+    {
+        if (!text.StartsWith(word, StringComparison.Ordinal)) return false;
+        return text.Length == word.Length || !char.IsLetter(text[word.Length]);
     }
 
     private static readonly (string Name, DaySet Day)[] Weekdays =

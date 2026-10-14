@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using System.Globalization;
 using System.Text;
 
 namespace TermOrganize.Core;
@@ -11,7 +12,7 @@ public static class IcsWriter
     {
         var (start, end) = TermCalendar.Window(term);
         var builder = new StringBuilder();
-        void Line(string text) => builder.Append(text).Append('\n');
+        void Line(string text) => AppendFolded(builder, text);
         Line("BEGIN:VCALENDAR");
         Line("VERSION:2.0");
         Line("PRODID:-//Term Organize//Schedule//EN");
@@ -25,7 +26,8 @@ public static class IcsWriter
                 if (meeting.Start is not int startMin || meeting.End is not int endMin) continue;
                 var first = FirstDate(start, meeting.Days);
                 if (first is null) continue;
-                var until = end.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture) + "T235959";
+                // RFC 5545: when DTSTART carries a TZID, UNTIL is UTC and ends with Z.
+                var until = UntilUtc(end);
                 Line("BEGIN:VEVENT");
                 Line("UID:" + section.Crn + "-" + meeting.Days.Raw + "-" + startMin + "@termorganize");
                 Line("SUMMARY:" + Escape($"{section.CourseKey} {section.Title}"));
@@ -39,6 +41,32 @@ public static class IcsWriter
         }
         Line("END:VCALENDAR");
         return builder.ToString().Replace("\n", "\r\n", StringComparison.Ordinal);
+    }
+
+    /// <summary>Folds at 75 octets. The newline is a bare LF so the final CRLF pass does not double the CR.</summary>
+    private static void AppendFolded(StringBuilder builder, string text)
+    {
+        var column = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var size = rune.Utf8SequenceLength;
+            if (column > 0 && column + size > 75)
+            {
+                builder.Append('\n').Append(' ');
+                column = 1;
+            }
+            builder.Append(rune.ToString());
+            column += size;
+        }
+        builder.Append('\n');
+    }
+
+    /// <summary>23:59:59 America/New_York on the last day of the term, written as UTC.</summary>
+    private static string UntilUtc(DateOnly end)
+    {
+        var local = new DateTime(end.Year, end.Month, end.Day, 23, 59, 59, DateTimeKind.Unspecified);
+        var utc = TimeZoneInfo.ConvertTimeToUtc(local, TermCalendar.NewYork);
+        return utc.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
     }
 
     private static DateOnly? FirstDate(DateOnly start, DaySet days)

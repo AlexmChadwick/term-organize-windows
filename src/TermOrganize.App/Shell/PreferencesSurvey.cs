@@ -11,7 +11,7 @@ namespace TermOrganize;
 /// <summary>The "Your ideal week" survey. Nothing is stored until Done.</summary>
 internal sealed class PreferencesSurvey : StackPanel
 {
-    public const string Placeholder = "No classes before 10, I have robotics club Tuesdays and Thursdays 6\u20138pm, I\u2019d like Fridays off and a lunch break";
+    public const string Placeholder = PreferenceParser.ExampleSentence;
 
     private SchedulePreferences _draft;
     private SchedulePreferences? _beforeFill;

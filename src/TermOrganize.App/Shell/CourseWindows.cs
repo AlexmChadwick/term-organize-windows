@@ -64,8 +64,11 @@ internal static class CourseDetail
         detail.Children.Add(actions);
         foreach (var section in index.Sections(key))
             detail.Children.Add(SectionCard(session, section, course.Title, index.Term.Code));
-        if (allowLiveRefresh && session.Store.Preferences.AutoRefreshSeats)
+        if (!allowLiveRefresh) return;
+        if (session.Store.Preferences.AutoRefreshSeats)
             _ = RefreshAsync(detail, session, course, index.Term.Code, inWindow);
+        else if (string.IsNullOrWhiteSpace(course.Description))
+            _ = DetailsAsync(detail, session, course, index.Term.Code, index.Sections(key).FirstOrDefault()?.Crn, inWindow);
     }
 
     private static async Task RefreshAsync(StackPanel detail, AppSession session, Course course, string term, bool inWindow)
@@ -77,7 +80,26 @@ internal static class CourseDetail
             var live = await BannerClient.Shared.FetchSectionsAsync(term, [course.Key]);
             if (live.TryGetValue(course.Key, out var banner))
             {
+                try
+                {
+                    await BannerClient.Shared.AttachFacultyAsync(term, banner, 12);
+                }
+                catch (BannerException)
+                {
+                    // Seat counts still apply when the faculty endpoint is down.
+                }
                 session.RefreshCourse(course.Key, banner);
+                if (string.IsNullOrWhiteSpace(course.Description))
+                {
+                    try
+                    {
+                        await FillDetailsAsync(session, course, term, banner.FirstOrDefault()?.CourseReferenceNumber);
+                    }
+                    catch (BannerException)
+                    {
+                        // Sections are already refreshed. The description can load on the next open.
+                    }
+                }
                 Show(detail, session, course.Key, inWindow, allowLiveRefresh: false);
             }
         }
@@ -89,6 +111,36 @@ internal static class CourseDetail
         {
             Busy.Remove(token);
         }
+    }
+
+    private static async Task DetailsAsync(StackPanel detail, AppSession session, Course course, string term, string? crn, bool inWindow)
+    {
+        var token = "details|" + term + "|" + course.Key;
+        if (!Busy.Add(token)) return;
+        try
+        {
+            await FillDetailsAsync(session, course, term, crn);
+            Show(detail, session, course.Key, inWindow, allowLiveRefresh: false);
+        }
+        catch (BannerException ex)
+        {
+            detail.Children.Insert(0, Chrome.Body("Banner didn\u2019t return the description: " + ex.Message));
+        }
+        finally
+        {
+            Busy.Remove(token);
+        }
+    }
+
+    private static async Task FillDetailsAsync(AppSession session, Course course, string term, string? crn)
+    {
+        if (!string.IsNullOrWhiteSpace(course.Description) || crn is null || session.Index is null) return;
+        var detailed = await BannerClient.Shared.FetchCourseDetailsAsync(
+            term,
+            crn,
+            course,
+            new BannerParsers.SubjectLookup(session.Index.Catalog.Subjects));
+        CatalogBuilder.ApplyCourseDetails(course, detailed);
     }
 
     private static Border SectionCard(AppSession session, CourseSection section, string title, string term)

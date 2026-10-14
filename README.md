@@ -4,6 +4,8 @@ Unofficial Windows desktop app for searching Northeastern University courses, bu
 
 **Not affiliated with, endorsed by, or sponsored by Northeastern University or Sandbox.** Course information is © Northeastern University and is not covered by the license grant. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
+Term Organize is free software under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). You can redistribute it and change it. There is no warranty. Search, schedule generation, requisite parsing, and the Banner client are derived from [SearchNEU](https://github.com/sandboxnu/searchneu), Copyright (C) Sandbox at Northeastern University and the SearchNEU contributors, also under the AGPL-3.0. Upstream revision consulted: `3ffa0f2402054ffe1115178b92bb3b99da1bdcba` (2026-09-30).
+
 The window follows the Mac app: one window, a sidebar (Search, Subjects, Saved, Professors, Free Rooms, Schedules, Degree Plans, Watchlist), a term picker in the title bar, and the unofficial-status line along the bottom. Light and dark themes use Fluent styling and a Mica backdrop. Closing the window leaves the app in the tray; Exit on the tray menu quits. The tray flyout is Up Next.
 
 All of the course, schedule, and degree logic lives in `src/TermOrganize.Core`, a .NET 9 class library that builds and tests on Linux. The WinUI 3 shell in `src/TermOrganize.App` is what Windows packages. On Linux, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj -p:EnableWindowsTargeting=true -p:Platform=x64` compiles that shell's C# against the Windows App SDK reference assemblies. The XAML compiler does not run on Linux. How each Swift area was carried over is in [PARITY.md](PARITY.md).
@@ -28,7 +30,13 @@ dotnet publish src/TermOrganize.App/TermOrganize.App.csproj -c Release -p:Platfo
 
 Run `artifacts\unpackaged\TermOrganize.App.exe`. An unpackaged build registers `termorganize://`, `neuclasssearch://`, and .pdf Open With for the current user.
 
-GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and a self-contained unpackaged zip (`WindowsAppSDKSelfContained=true`). That job waits for `TermOrganize.App.exe --screenshot-sweep` to exit and uploads light and dark PNGs of each page at 1440×900 and 800×900, plus `error.txt` and the sweep log, as the `ui-sweep` artifact even when the capture fails. The package job runs even when the tests fail. The workflow creates a self-signed `CN=Term Organize` certificate at build time. That certificate is not in source control. Trust it before installing the MSIX. The shell C# has been compiled on Linux against those references. The XAML compiler does not run on Linux.
+GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and a self-contained unpackaged zip (`WindowsAppSDKSelfContained=true`). That job waits for `TermOrganize.App.exe --screenshot-sweep` to exit and uploads light and dark PNGs of each page at 1440×900 and 800×900, plus `error.txt` and the sweep log, as the `ui-sweep` artifact even when the capture fails. It then runs `TermOrganize.App.exe --selftest <directory>` against the live Northeastern class search. That process does not open a window. It checks search, course detail, save, schedule generation, the preference survey, an `.ics` export, a degree-plan PDF round trip, free rooms, professors, the watchlist, and settings. The job fails if the process throws, returns a non-zero exit code, or logs an empty result. The log is the `selftest` artifact. The package job runs even when the tests fail. The workflow creates a self-signed `CN=Term Organize` certificate at build time. That certificate is not in source control. Trust it before installing the MSIX. The shell C# has been compiled on Linux against those references. The XAML compiler does not run on Linux.
+
+On Windows, the same check is:
+
+```powershell
+.\artifacts\unpackaged\TermOrganize.App.exe --selftest .\artifacts\selftest
+```
 
 ## Data
 

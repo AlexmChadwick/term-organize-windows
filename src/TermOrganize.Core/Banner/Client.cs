@@ -276,6 +276,60 @@ public sealed class BannerClient : IDisposable
         return instructors.OrderByDescending(instructor => instructor.Primary).ToList();
     }
 
+    /// <summary>
+    /// Banner search results omit faculty. This fills up to <paramref name="maxSections"/>
+    /// sections from <see cref="FetchInstructorsAsync"/> so a course refresh can show names.
+    /// A faculty miss leaves that section unchanged. The count is how many gained a name.
+    /// </summary>
+    public async Task<int> AttachFacultyAsync(
+        string term,
+        IList<BannerSection> sections,
+        int maxSections = 12,
+        CancellationToken cancellationToken = default)
+    {
+        var filled = 0;
+        var tried = 0;
+        foreach (var section in sections)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (HasFaculty(section)) continue;
+            if (tried >= maxSections) break;
+            tried++;
+            var instructors = await FetchInstructorsAsync(term, section.CourseReferenceNumber, cancellationToken).ConfigureAwait(false);
+            if (instructors.Count == 0) continue;
+            ApplyFaculty(section, instructors);
+            filled++;
+        }
+        return filled;
+    }
+
+    /// <summary>Writes instructors onto a section so <see cref="CatalogBuilder.MakeSections"/> keeps them.</summary>
+    public static void ApplyFaculty(BannerSection section, IReadOnlyList<Instructor> instructors)
+    {
+        if (instructors.Count == 0) return;
+        var faculty = instructors.Select(instructor => new BannerFaculty
+        {
+            DisplayName = instructor.Name,
+            EmailAddress = instructor.Email,
+            PrimaryIndicator = instructor.Primary,
+        }).ToList();
+        section.MeetingsFaculty ??= [];
+        var host = section.MeetingsFaculty.FirstOrDefault();
+        if (host is null)
+        {
+            section.MeetingsFaculty.Add(new BannerMeetingFaculty
+            {
+                CourseReferenceNumber = section.CourseReferenceNumber,
+                Faculty = faculty,
+            });
+            return;
+        }
+        host.Faculty = faculty;
+    }
+
+    private static bool HasFaculty(BannerSection section) =>
+        (section.MeetingsFaculty ?? []).Any(meeting => (meeting.Faculty ?? []).Any(faculty => faculty.ToInstructor() is not null));
+
     public Task<string> FetchDescriptionHtmlAsync(string term, string crn, CancellationToken cancellationToken = default) =>
         PostFormAsync("searchResults/getCourseDescription", term, crn, cancellationToken);
 

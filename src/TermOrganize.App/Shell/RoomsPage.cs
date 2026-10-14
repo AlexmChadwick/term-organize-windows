@@ -119,8 +119,8 @@ public sealed class RoomsPage : UserControl
     private RoomAvailability.Moment Moment()
     {
         if (_followNow || _when.SelectedItem is not WhenChoice { Minutes: int minutes })
-            return RoomAvailability.Moment.From(DateTime.Now);
-        var today = DateTime.Now;
+            return RoomAvailability.Moment.From(TermCalendar.Now());
+        var today = TermCalendar.Now();
         return new RoomAvailability.Moment((int)today.DayOfWeek, minutes, DateOnly.FromDateTime(today));
     }
 

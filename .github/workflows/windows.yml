@@ -211,6 +211,56 @@ jobs:
           }
           Write-Host "UI sweep wrote $($pngs.Count) screenshots, exit $exit."
 
+      - name: Functional self-test against live Banner
+        if: always()
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "${{ github.workspace }}"
+          $out = Join-Path $root "artifacts/selftest"
+          $exe = Join-Path $root "artifacts/unpackaged/TermOrganize.App.exe"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          if (-not (Test-Path $exe)) { throw "Missing $exe" }
+          $stdout = Join-Path $out "stdout.txt"
+          $stderr = Join-Path $out "stderr.txt"
+          $p = Start-Process -FilePath $exe -ArgumentList '--selftest', $out -PassThru -WorkingDirectory (Split-Path $exe) -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $timedOut = $false
+          try {
+            Wait-Process -Id $p.Id -Timeout 300 -ErrorAction Stop
+          } catch {
+            $timedOut = $true
+          }
+          if (-not $p.HasExited) {
+            $timedOut = $true
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            $p.WaitForExit(10000) | Out-Null
+          }
+          $p.Refresh()
+          $exit = $null
+          if ($p.HasExited) { $exit = $p.ExitCode }
+          $log = Join-Path $out "selftest.log"
+          Write-Host "--- selftest.log ---"
+          if (Test-Path $log) { Get-Content $log -Raw | Write-Host } else { Write-Host "(missing)" }
+          Write-Host "--- stdout ---"
+          if (Test-Path $stdout) { Get-Content $stdout -Raw -ErrorAction SilentlyContinue | Write-Host }
+          Write-Host "--- stderr ---"
+          if (Test-Path $stderr) { Get-Content $stderr -Raw -ErrorAction SilentlyContinue | Write-Host }
+          if ($timedOut) { throw "Self-test timed out after 300 seconds (exit $exit)." }
+          if ($null -eq $exit -or $exit -ne 0) { throw "Self-test failed with exit $exit." }
+          if (-not (Test-Path $log) -or -not (Select-String -Path $log -Pattern 'SELFTEST OK' -Quiet)) {
+            throw "Self-test log is missing SELFTEST OK."
+          }
+          Write-Host "Self-test passed."
+
+      - name: Upload self-test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest
+          path: artifacts/selftest/
+          if-no-files-found: warn
+
       - name: Upload UI sweep
         if: always()
         uses: actions/upload-artifact@v4

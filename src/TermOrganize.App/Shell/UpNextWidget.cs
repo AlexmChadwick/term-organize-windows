@@ -148,7 +148,7 @@ internal static class UpNextLines
                 }
                 catch (Exception) { catalog = null; }
             }
-            return Current(store, catalog is null ? null : CatalogIndex.Build(catalog), DateTime.Now);
+            return Current(store, catalog is null ? null : CatalogIndex.Build(catalog), TermCalendar.Now());
         }
         catch (Exception)
         {

@@ -932,7 +932,7 @@ public sealed partial class MainWindow : Window
     public void RefreshUpNext()
     {
         var session = App.Session;
-        var line = UpNextLines.Current(session.Store, session.Index, DateTime.Now);
+        var line = UpNextLines.Current(session.Store, session.Index, TermCalendar.Now());
         _upNext.Text = line == "Nothing else today." ? "Nothing else today. The tray flyout is Up Next." : line;
     }
 

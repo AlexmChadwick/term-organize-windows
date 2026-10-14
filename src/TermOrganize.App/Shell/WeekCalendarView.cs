@@ -129,7 +129,7 @@ internal sealed class WeekCalendarView : UserControl
             _canvas.Children.Add(card);
         }
 
-        var now = DateTime.Now;
+        var now = TermCalendar.Now();
         if (days.Contains((int)now.DayOfWeek))
         {
             var minutes = now.Hour * 60 + now.Minute;

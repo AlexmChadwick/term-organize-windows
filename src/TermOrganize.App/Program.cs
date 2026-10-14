@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using TermOrganize.Core;
 
 namespace TermOrganize;
 
@@ -19,6 +20,26 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (TrySelfTestDirectory(args, out var selfTestDirectory))
+        {
+            try
+            {
+                Environment.Exit(Task.Run(() => ReleaseSmoke.RunAsync(selfTestDirectory)).GetAwaiter().GetResult());
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    Directory.CreateDirectory(selfTestDirectory);
+                    File.WriteAllText(Path.Combine(selfTestDirectory, "selftest.log"), ex.ToString());
+                }
+                catch (Exception)
+                {
+                    Console.Error.WriteLine(ex);
+                }
+                Environment.Exit(1);
+            }
+        }
         try
         {
             ScreenshotSweep.EnsureHooks();
@@ -61,4 +82,29 @@ public static class Program
 
     private static bool Has(string[] args, string flag) =>
         args.Any(arg => arg.Equals(flag, StringComparison.OrdinalIgnoreCase));
+
+    private static bool TrySelfTestDirectory(string[] args, out string directory)
+    {
+        directory = "";
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (arg.Equals("--selftest", StringComparison.OrdinalIgnoreCase))
+            {
+                directory = i + 1 < args.Length && !args[i + 1].StartsWith('-')
+                    ? args[i + 1].Trim().Trim('"')
+                    : Path.Combine(Path.GetTempPath(), "term-organize-selftest");
+                return true;
+            }
+            const string prefix = "--selftest=";
+            if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                directory = arg[prefix.Length..].Trim().Trim('"');
+                if (directory.Length == 0)
+                    directory = Path.Combine(Path.GetTempPath(), "term-organize-selftest");
+                return true;
+            }
+        }
+        return false;
+    }
 }

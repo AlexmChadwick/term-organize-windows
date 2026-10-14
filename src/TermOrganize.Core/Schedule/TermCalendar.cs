@@ -32,6 +32,17 @@ public static class TermCalendar
         return day >= start && day <= end;
     }
 
+    /// <summary>
+    /// Northeastern class times are America/New_York wall times. Passing a UTC instant
+    /// (or omitting it for now) keeps "right now" on the campus clock.
+    /// </summary>
+    public static DateTime Now(DateTimeOffset? utc = null)
+    {
+        var instant = utc ?? DateTimeOffset.UtcNow;
+        var local = TimeZoneInfo.ConvertTime(instant, NewYork);
+        return DateTime.SpecifyKind(local.DateTime, DateTimeKind.Unspecified);
+    }
+
     public static (DateTimeOffset Start, DateTimeOffset End)? ApproximateWindow(string termCode)
     {
         var term = new Term(termCode, "");

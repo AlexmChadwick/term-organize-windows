@@ -26,7 +26,7 @@ public static class RoomAvailability
         public static Moment From(DateTime date) =>
             new((int)date.DayOfWeek, date.Hour * 60 + date.Minute, DateOnly.FromDateTime(date));
 
-        public static Moment From(DateTimeOffset date) => From(date.LocalDateTime);
+        public static Moment From(DateTimeOffset date) => From(TermCalendar.Now(date));
 
         /// <summary>Classes are scheduled between 7 AM and 10 PM.</summary>
         public bool IsWithinClassHours => Minutes >= FirstClassMinute && Minutes < LastClassMinute;

@@ -66,10 +66,13 @@ Course, section, seat and instructor information is retrieved from Northeastern
 University's public class search (<https://nubanner.neu.edu/StudentRegistrationSsb>) — the
 same source SearchNEU uses. Course titles, descriptions and other catalog content are
 © Northeastern University. The bundled snapshot
-(`NEUClassSearch/Resources/Catalog/term-202710.catalog`) was generated on 2026-10-03 with
-`Tools/build-catalog-snapshot.sh`. It includes the instructor names and work email
-addresses that Northeastern publishes in its class search. This data belongs to Northeastern
-University and is **not** covered by this project's AGPL license grant. "Northeastern
+(`NEUClassSearch/Resources/Catalog/term-202710.catalog`, and on Windows
+`src/TermOrganize.Core/Catalog/term-202710.catalog` plus `term-202710.json.gz`) was generated
+on 2026-10-03 with `Tools/build-catalog-snapshot.sh`. It includes the instructor names and the
+email addresses Northeastern's class search published for that term. Those addresses are not
+only `@northeastern.edu` mail: the snapshot also contains other addresses instructors listed
+there, including personal inboxes. This data belongs to Northeastern University and the people
+named in it, and is **not** covered by this project's AGPL license grant. "Northeastern
 University" and "NUpath" are used only descriptively; no Northeastern logos or other marks
 are included.
 

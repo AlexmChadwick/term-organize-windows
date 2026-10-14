@@ -25,7 +25,11 @@ public sealed class SettingsPage : UserControl
             MaxWidth = 720,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        Content = new ScrollViewer { Content = panel };
+        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Chrome.KeepInside(scroll);
+        Chrome.ClipToBounds(panel);
+        Content = scroll;
+        Chrome.ClipToBounds(this);
         panel.Children.Add(Chrome.Heading("Settings"));
         panel.Children.Add(Chrome.Body(LegalText.UnofficialNotice));
         panel.Children.Add(Chrome.Body(LegalText.PrivacyNotice));

@@ -4,6 +4,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace TermOrganize;
@@ -66,16 +67,20 @@ internal static class Chrome
     /// A fixed-height scroller. An unconstrained ScrollViewer grows with its content, so a dialog
     /// footer below it would sit past the window.
     /// </summary>
-    public static ScrollViewer ConstrainedScroll(UIElement content, double height) => new()
+    public static ScrollViewer ConstrainedScroll(UIElement content, double height)
     {
-        Content = content,
-        Height = height,
-        MaxHeight = height,
-        HorizontalScrollMode = ScrollMode.Disabled,
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        VerticalScrollMode = ScrollMode.Enabled,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
-    };
+        var scroll = new ScrollViewer
+        {
+            Content = content,
+            Height = height,
+            MaxHeight = height,
+            VerticalScrollMode = ScrollMode.Enabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+        KeepInside(scroll);
+        return scroll;
+    }
 
     /// <summary>Leaves room for a dialog title, the pinned buttons, and the window chrome.</summary>
     public static double DialogViewport(double windowHeight)
@@ -84,13 +89,76 @@ internal static class Chrome
         return Math.Clamp(height - 280, 220, 480);
     }
 
-    public static ScrollViewer Details(UIElement content) => new()
+    /// <summary>
+    /// The right-hand course pane. Twenty-four pixels of left padding separate it from the
+    /// splitter. A 24px right margin keeps the description and section cards off the window edge.
+    /// </summary>
+    public static ScrollViewer Details(UIElement content)
     {
-        Content = content,
-        Padding = new Thickness(24, 0, 0, 0),
-        HorizontalScrollMode = ScrollMode.Disabled,
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        var scroll = new ScrollViewer
+        {
+            Content = content,
+            Padding = new Thickness(24, 0, 0, 0),
+            Margin = new Thickness(0, 0, 24, 0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+        KeepInside(scroll);
+        return scroll;
+    }
+
+    /// <summary>
+    /// A vertical stack measured with infinite width never wraps, so the line runs off the
+    /// window. Pin the content to the viewport, and keep a caller-set MaxWidth when it is tighter.
+    /// </summary>
+    public static void KeepInside(ScrollViewer scroll)
+    {
+        scroll.HorizontalScrollMode = ScrollMode.Disabled;
+        scroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        var cap = scroll.Content is FrameworkElement existing ? existing.MaxWidth : double.PositiveInfinity;
+        void Fit()
+        {
+            if (scroll.Content is not FrameworkElement content) return;
+            var inner = scroll.ActualWidth - scroll.Padding.Left - scroll.Padding.Right;
+            if (inner <= 1) return;
+            var view = scroll.ViewportWidth;
+            var width = view > 1 && view <= inner + 0.5 ? view : inner;
+            if (!double.IsPositiveInfinity(cap) && cap > 0 && cap < width)
+                width = cap;
+            content.HorizontalAlignment = HorizontalAlignment.Stretch;
+            if (double.IsNaN(content.MaxWidth) || Math.Abs(content.MaxWidth - width) > 0.5)
+                content.MaxWidth = width;
+        }
+        scroll.Loaded += (_, _) => Fit();
+        scroll.SizeChanged += (_, _) => Fit();
+    }
+
+    /// <summary>Stops a child from painting through this element's padding into the window edge.</summary>
+    public static void ClipToBounds(FrameworkElement element)
+    {
+        void Fit()
+        {
+            var (left, top, right, bottom) = Inset(element);
+            var width = element.ActualWidth - left - right;
+            var height = element.ActualHeight - top - bottom;
+            if (element.ActualWidth <= 1 || element.ActualHeight <= 1 || width <= 0 || height <= 0) return;
+            var rect = new Rect(left, top, Math.Max(0, width), Math.Max(0, height));
+            if (element.Clip is RectangleGeometry geometry)
+                geometry.Rect = rect;
+            else
+                element.Clip = new RectangleGeometry { Rect = rect };
+        }
+        element.Loaded += (_, _) => Fit();
+        element.SizeChanged += (_, _) => Fit();
+    }
+
+    private static (double Left, double Top, double Right, double Bottom) Inset(FrameworkElement element) => element switch
+    {
+        Grid grid => (grid.Padding.Left, grid.Padding.Top, grid.Padding.Right, grid.Padding.Bottom),
+        Control control => (control.Padding.Left, control.Padding.Top, control.Padding.Right, control.Padding.Bottom),
+        Border border => (border.Padding.Left, border.Padding.Top, border.Padding.Right, border.Padding.Bottom),
+        StackPanel stack => (stack.Padding.Left, stack.Padding.Top, stack.Padding.Right, stack.Padding.Bottom),
+        _ => (0, 0, 0, 0),
     };
 
     public static Border Card(UIElement child)

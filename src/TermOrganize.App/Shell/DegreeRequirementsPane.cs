@@ -253,7 +253,12 @@ internal sealed class DegreeRequirementsPane : UserControl
             if (rules.Count == 0 && _filter != DegreeRequirementsFilter.All) continue;
             var covered = section.Rules.Count(rule => rule.Status.IsSatisfied());
             var block = new StackPanel { Spacing = 6 };
-            block.Children.Add(new TextBlock { Text = $"{section.Section.Title} \u00b7 {covered} of {section.Rules.Count}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            block.Children.Add(new TextBlock
+            {
+                Text = $"{section.Section.Title} \u00b7 {covered} of {section.Rules.Count}",
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+            });
             foreach (var group in section.Groups)
             {
                 if (group.Group.Title is string title) block.Children.Add(Chrome.Body(title));
@@ -310,7 +315,8 @@ internal sealed class DegreeRequirementsPane : UserControl
             _filter = choice.Filter;
             PaintAudit();
         };
-        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        programBox.HorizontalAlignment = HorizontalAlignment.Left;
+        var line = new WrapLayout { Spacing = 8 };
         line.Children.Add(yearBox);
         line.Children.Add(programBox);
         line.Children.Add(change);
@@ -345,7 +351,11 @@ internal sealed class DegreeRequirementsPane : UserControl
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
-            Content = $"{result.Rule.DisplayLabel} \u00b7 {DegreeRequirementText.Progress(result)} \u00b7 {result.Status.DegreeLabel()}",
+            Content = new TextBlock
+            {
+                Text = $"{result.Rule.DisplayLabel} \u00b7 {DegreeRequirementText.Progress(result)} \u00b7 {result.Status.DegreeLabel()}",
+                TextWrapping = TextWrapping.Wrap,
+            },
         };
         open.Click += (_, _) =>
         {
@@ -382,7 +392,7 @@ internal sealed class DegreeRequirementsPane : UserControl
             };
             panel.Children.Add(more);
         }
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var actions = new WrapLayout { Spacing = 8 };
         actions.Children.Add(Action("Count a course", () => _ = SubstitutionAsync(result, DegreeSubstitutionRequest.Kind.CountCourse)));
         actions.Children.Add(Action("Petition", () => _ = SubstitutionAsync(result, DegreeSubstitutionRequest.Kind.Replace)));
         actions.Children.Add(Action("Waive", () => _ = SubstitutionAsync(result, DegreeSubstitutionRequest.Kind.Waive)));
@@ -395,13 +405,17 @@ internal sealed class DegreeRequirementsPane : UserControl
     private StackPanel CourseRow(CourseKey key, DegreeAudit.RuleResult result, DegreeRequirementsLookup lookup)
     {
         var info = lookup.RowInfo(key, result);
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new StackPanel { Spacing = 4 };
         var title = lookup.TitleOf(key);
-        row.Children.Add(new TextBlock { Text = title is null ? $"{key} \u00b7 {info.Status.Label}" : $"{key} {title} \u00b7 {info.Status.Label}", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+        row.Children.Add(new TextBlock
+        {
+            Text = title is null ? $"{key} \u00b7 {info.Status.Label}" : $"{key} {title} \u00b7 {info.Status.Label}",
+            TextWrapping = TextWrapping.Wrap,
+        });
         if (info.Caption is string caption) row.Children.Add(Chrome.Body(caption));
         if (info.AddKey is CourseKey add && !info.Status.IsInPlan)
         {
-            var button = new Button { Content = "Add to plan" };
+            var button = new Button { Content = "Add to plan", HorizontalAlignment = HorizontalAlignment.Left };
             button.Click += (_, _) => AddToPlan(add, lookup.TitleOf(add) ?? title ?? "", lookup.CreditsOf(add) ?? 4);
             row.Children.Add(button);
         }
@@ -509,7 +523,7 @@ internal sealed class DegreeRequirementsPane : UserControl
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot ?? _window.Content.XamlRoot,
-            Content = new ScrollViewer { Content = panel, MaxHeight = 520 },
+            Content = SubstitutionScroll(panel),
         };
         dialog.PrimaryButtonClick += (_, args) =>
         {
@@ -574,7 +588,16 @@ internal sealed class DegreeRequirementsPane : UserControl
         var panel = new StackPanel { Spacing = 6 };
         panel.Children.Add(new TextBlock { Text = renumbering.Question, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(Chrome.Body(renumbering.Explanation));
-        var button = new Button { Content = $"Same course, new number ({renumbering.Course} = {renumbering.CountsAs})", HorizontalAlignment = HorizontalAlignment.Left };
+        var button = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Content = new TextBlock
+            {
+                Text = $"Same course, new number ({renumbering.Course} = {renumbering.CountsAs})",
+                TextWrapping = TextWrapping.Wrap,
+            },
+        };
         button.Click += (_, _) =>
         {
             if (_plan is null) return;
@@ -588,7 +611,7 @@ internal sealed class DegreeRequirementsPane : UserControl
     private UIElement SubstitutionList(DegreePlan plan, ProgramRequirements requirements)
     {
         var panel = new StackPanel { Spacing = 6 };
-        panel.Children.Add(new TextBlock { Text = "Substitutions and petitions", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = "Substitutions and petitions", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         if (plan.Substitutions.Count == 0)
             panel.Children.Add(Chrome.Body("When an advisor approves a substitution or petition, select the requirement it changes and record it."));
         foreach (var substitution in plan.Substitutions)
@@ -655,6 +678,18 @@ internal sealed class DegreeRequirementsPane : UserControl
         var button = new Button { Content = label };
         button.Click += (_, _) => click();
         return button;
+    }
+
+    private static ScrollViewer SubstitutionScroll(StackPanel panel)
+    {
+        var scroll = new ScrollViewer
+        {
+            Content = panel,
+            MaxHeight = 520,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Chrome.KeepInside(scroll);
+        return scroll;
     }
 
     private sealed record YearChoice(CatalogYear Year)

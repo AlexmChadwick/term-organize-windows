@@ -134,7 +134,11 @@ internal sealed class PreferencesSurvey : StackPanel
             var captured = preset;
             var toggle = new ToggleButton
             {
-                Content = preset.Title() + " \u2014 " + preset.Detail(),
+                Content = new TextBlock
+                {
+                    Text = preset.Title() + " \u2014 " + preset.Detail(),
+                    TextWrapping = TextWrapping.Wrap,
+                },
                 IsChecked = preset.IsApplied(_draft),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
@@ -156,10 +160,18 @@ internal sealed class PreferencesSurvey : StackPanel
         panel.Children.Add(Chrome.Body("\u201CPrefer\u201D puts schedules with classes then first. \u201CAvoid\u201D puts them last. Neither removes a schedule."));
         foreach (var band in Enum.GetValues<TimeBand>())
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            row.Children.Add(new TextBlock { Text = band.Title() + " \u00b7 " + band.Detail(), VerticalAlignment = VerticalAlignment.Center, Width = 220 });
+            var row = new Grid { ColumnSpacing = 8 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(new TextBlock
+            {
+                Text = band.Title() + " \u00b7 " + band.Detail(),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+            });
             var box = EnumBox(_draft[band], value => value.Title());
             _bands[band] = box;
+            Grid.SetColumn(box, 1);
             row.Children.Add(box);
             panel.Children.Add(row);
         }
@@ -177,7 +189,7 @@ internal sealed class PreferencesSurvey : StackPanel
 
     private (CheckBox On, ComboBox Time, ComboBox Strength) LimitRow(StackPanel panel, string label, TimeLimit? limit, int from, int to)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new WrapLayout { Spacing = 8 };
         var on = new CheckBox { Content = label, IsChecked = limit is not null, VerticalAlignment = VerticalAlignment.Center };
         var time = TimeBox(limit?.Minutes ?? from, from, to);
         var strength = EnumBox(limit?.Strength ?? PreferenceStrength.Preferred, value => value.Title());
@@ -193,7 +205,7 @@ internal sealed class PreferencesSurvey : StackPanel
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(Chrome.Body("\u201CAlways\u201D leaves out a class on a day off. \u201CIf possible\u201D puts schedules with those days free first."));
         var names = new[] { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var row = new WrapLayout { Spacing = 8 };
         for (var day = 0; day < 7; day++)
         {
             var box = new CheckBox { Content = names[day][..3], IsChecked = _draft.DaysOff.Contains(day) };
@@ -233,7 +245,7 @@ internal sealed class PreferencesSurvey : StackPanel
     {
         var panel = new StackPanel { Spacing = 4 };
         var label = new TextBox { Header = "Label", Text = block.Label, Tag = block };
-        var days = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var days = new WrapLayout { Spacing = 6 };
         var names = new[] { "U", "M", "T", "W", "R", "F", "S" };
         for (var day = 0; day < 7; day++)
             days.Children.Add(new CheckBox { Content = names[day], IsChecked = block.Days.Contains(day), Tag = day });
@@ -249,7 +261,7 @@ internal sealed class PreferencesSurvey : StackPanel
         };
         panel.Children.Add(label);
         panel.Children.Add(days);
-        var times = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var times = new WrapLayout { Spacing = 8 };
         times.Children.Add(start);
         times.Children.Add(end);
         times.Children.Add(strength);
@@ -299,7 +311,7 @@ internal sealed class PreferencesSurvey : StackPanel
         panel.Children.Add(Sub("Credits"));
         _creditsLow = new NumberBox { Header = "At least", Value = _draft.CreditTarget?.Lower ?? double.NaN, Minimum = 1, Maximum = 30 };
         _creditsHigh = new NumberBox { Header = "At most", Value = _draft.CreditTarget?.Upper ?? double.NaN, Minimum = 1, Maximum = 30 };
-        var credits = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var credits = new WrapLayout { Spacing = 8 };
         credits.Children.Add(_creditsLow);
         credits.Children.Add(_creditsHigh);
         panel.Children.Add(credits);
@@ -325,7 +337,7 @@ internal sealed class PreferencesSurvey : StackPanel
             var blocks = new List<BlockedTime>();
             foreach (StackPanel row in _blocks.Children)
             {
-                if (row.Tag is not (Guid id, TextBox label, StackPanel days, ComboBox start, ComboBox end, ComboBox strength)) continue;
+                if (row.Tag is not (Guid id, TextBox label, Panel days, ComboBox start, ComboBox end, ComboBox strength)) continue;
                 var mask = DaySet.None;
                 foreach (CheckBox day in days.Children)
                     if (day.IsChecked == true && day.Tag is int index) mask = mask.Union(DaySet.Day(index));

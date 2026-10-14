@@ -19,7 +19,7 @@ internal static class RequisiteTreeView
             key => session.Store.CompletionFor(key));
         if (node is null) return null;
         var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock { Text = heading, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = heading, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(Node(node, 0));
         return panel;
     }
@@ -48,7 +48,7 @@ internal static class RequisiteTreeView
     private static StackPanel Group(string title, IReadOnlyList<RequisiteNode> members, int depth)
     {
         var panel = new StackPanel { Spacing = 2, Margin = new Thickness(depth * 16, 0, 0, 0) };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         foreach (var member in members) panel.Children.Add(Node(member, 1));
         return panel;
     }

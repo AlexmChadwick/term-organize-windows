@@ -49,12 +49,14 @@ public sealed class SchedulesPage : UserControl
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var scroll = new ScrollViewer { Content = left };
+        var scroll = new ScrollViewer { Content = left, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Chrome.KeepInside(scroll);
         root.Children.Add(scroll);
         Grid.SetRow(_week, 1);
         root.Children.Add(_week);
         Content = root;
         Padding = Chrome.PagePadding;
+        Chrome.ClipToBounds(this);
         _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         ReloadPlans();
     }
@@ -214,8 +216,16 @@ public sealed class SchedulesPage : UserControl
         var index = _session.Index!;
         var title = index.Course(course.Key)?.Title ?? "";
         var panel = new StackPanel { Spacing = 4 };
-        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        header.Children.Add(new TextBlock { Text = $"{course.Key}  {title}", VerticalAlignment = VerticalAlignment.Center, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var header = new Grid { ColumnSpacing = 8 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 80 });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock
+        {
+            Text = $"{course.Key}  {title}",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
         var required = new CheckBox { Content = "Required", IsChecked = course.IsRequired, VerticalAlignment = VerticalAlignment.Center };
         var key = course.Key;
         required.Checked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetRequired(true, key, plan));
@@ -239,14 +249,20 @@ public sealed class SchedulesPage : UserControl
             _session.Store.RemoveCourse(key, _plan!.Id, index.Sections(key).Select(section => section.Crn));
             ReloadPlans();
         };
-        header.Children.Add(required);
-        header.Children.Add(colors);
-        header.Children.Add(remove);
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        tools.Children.Add(required);
+        tools.Children.Add(colors);
+        tools.Children.Add(remove);
+        Grid.SetColumn(tools, 1);
+        header.Children.Add(tools);
         panel.Children.Add(header);
         var crns = index.Sections(key).Select(section => section.Crn).ToHashSet(StringComparer.Ordinal);
         foreach (var section in index.Sections(key))
         {
-            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(12, 0, 0, 0) };
+            var line = new Grid { ColumnSpacing = 8, Margin = new Thickness(12, 0, 0, 0) };
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var consider = new CheckBox { Content = "Consider", IsChecked = !course.ExcludedCRNs.Contains(section.Crn) };
             var crn = section.Crn;
             consider.Checked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(false, crn, key, plan));
@@ -266,8 +282,16 @@ public sealed class SchedulesPage : UserControl
                 ShowPlan();
             };
             line.Children.Add(consider);
+            Grid.SetColumn(onCalendar, 1);
             line.Children.Add(onCalendar);
-            line.Children.Add(new TextBlock { Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn} \u00b7 {section.ScheduleSummary} \u00b7 {section.SeatsLabel}", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            var sectionText = new TextBlock
+            {
+                Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn} \u00b7 {section.ScheduleSummary} \u00b7 {section.SeatsLabel}",
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            Grid.SetColumn(sectionText, 2);
+            line.Children.Add(sectionText);
             panel.Children.Add(line);
         }
         return panel;

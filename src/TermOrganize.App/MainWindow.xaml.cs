@@ -744,13 +744,14 @@ public sealed partial class MainWindow : Window
             FontSize = 12,
             IsTextSelectionEnabled = true,
         });
-        ShowCaptureCard(new ScrollViewer
+        var about = new ScrollViewer
         {
             Content = panel,
             MaxHeight = 620,
-            HorizontalScrollMode = ScrollMode.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        });
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Chrome.KeepInside(about);
+        ShowCaptureCard(about);
     }
 
     private void ShowDialogOverlay()
@@ -869,7 +870,7 @@ public sealed partial class MainWindow : Window
             PrimaryButtonText = "Continue",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root.XamlRoot,
-            Content = new ScrollViewer { Content = panel, MaxHeight = 520 },
+            Content = WelcomeScroll(panel),
         };
         about.Click += (_, _) =>
         {
@@ -892,10 +893,22 @@ public sealed partial class MainWindow : Window
         App.Session.Store.ReplacePreferences(prefs);
     }
 
+    private static ScrollViewer WelcomeScroll(StackPanel panel)
+    {
+        var scroll = new ScrollViewer
+        {
+            Content = panel,
+            MaxHeight = 520,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Chrome.KeepInside(scroll);
+        return scroll;
+    }
+
     private static StackPanel WelcomeFeature(string title, string message)
     {
         var block = new StackPanel { Spacing = 2 };
-        block.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        block.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         block.Children.Add(Chrome.Body(message));
         return block;
     }

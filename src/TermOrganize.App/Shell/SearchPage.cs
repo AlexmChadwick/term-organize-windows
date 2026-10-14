@@ -50,6 +50,7 @@ public sealed class SearchPage : UserControl
         left.Children.Add(_results);
         var scroll = Chrome.Details(_detail);
         Content = new PaneSplit(left, scroll, 420) { Padding = Chrome.PagePadding };
+        Chrome.ClipToBounds(this);
 
         _query.TextChanged += (_, _) => { if (!_filling) Run(_query.Text); };
         _open.Checked += (_, _) => Apply();
@@ -177,11 +178,15 @@ public sealed class SearchPage : UserControl
 
     private Flyout ToggleChecks<T>(string title, string button, IEnumerable<(T Id, string Label)> items, Func<T, bool> isOn, Action<T, bool> set, Action clear)
     {
-        var panel = new StackPanel { Spacing = 4, MinWidth = 220 };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var panel = new StackPanel { Spacing = 4, MinWidth = 220, MaxWidth = 360 };
+        panel.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         foreach (var (id, label) in items)
         {
-            var box = new CheckBox { Content = label, IsChecked = isOn(id) };
+            var box = new CheckBox
+            {
+                Content = new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, MaxWidth = 320 },
+                IsChecked = isOn(id),
+            };
             var captured = id;
             box.Checked += (_, _) => { set(captured, true); Apply(); };
             box.Unchecked += (_, _) => { set(captured, false); Apply(); };
@@ -195,7 +200,9 @@ public sealed class SearchPage : UserControl
             Apply();
         };
         panel.Children.Add(clearButton);
-        return new Flyout { Content = new ScrollViewer { Content = panel, MaxHeight = 360 } };
+        var flyoutScroll = new ScrollViewer { Content = panel, MaxHeight = 360, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Chrome.KeepInside(flyoutScroll);
+        return new Flyout { Content = flyoutScroll };
     }
 
     private Flyout AllFilters()
@@ -241,7 +248,9 @@ public sealed class SearchPage : UserControl
         instruction.SelectionChanged += (_, _) => Read();
         start.SelectionChanged += (_, _) => Read();
         end.SelectionChanged += (_, _) => Read();
-        return new Flyout { Content = new ScrollViewer { Content = panel, MaxHeight = 480 } };
+        var filterScroll = new ScrollViewer { Content = panel, MaxHeight = 480, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Chrome.KeepInside(filterScroll);
+        return new Flyout { Content = filterScroll };
     }
 
     private static ComboBox TimeBox(string header, int? selected)

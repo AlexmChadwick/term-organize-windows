@@ -52,7 +52,8 @@ public sealed class RoomsPage : UserControl
         middle.Children.Add(tools);
         Grid.SetRow(_axis, 1);
         middle.Children.Add(_axis);
-        var list = new ScrollViewer { Content = _rows };
+        var list = new ScrollViewer { Content = _rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Chrome.KeepInside(list);
         Grid.SetRow(list, 3);
         middle.Children.Add(list);
         _status.Margin = new Thickness(0, 8, 0, 0);
@@ -66,9 +67,10 @@ public sealed class RoomsPage : UserControl
         Grid.SetRow(_buildings, 1);
         buildingPane.Children.Add(_buildings);
 
-        var inspectorScroll = new ScrollViewer { Content = _inspector, Padding = new Thickness(16, 0, 0, 0) };
+        var inspectorScroll = Chrome.Details(_inspector);
         var right = new PaneSplit(middle, inspectorScroll, 420);
         Content = new PaneSplit(buildingPane, right, 240) { Padding = Chrome.PagePadding };
+        Chrome.ClipToBounds(this);
 
         _when.Items.Add(new WhenChoice(null, "Right now"));
         for (var minutes = RoomAvailability.FirstClassMinute; minutes < RoomAvailability.LastClassMinute; minutes += 30)
@@ -92,7 +94,7 @@ public sealed class RoomsPage : UserControl
         _showBusy.Unchecked += (_, _) => Paint();
         _buildings.SelectionChanged += (_, _) =>
         {
-            if (_buildings.SelectedItem is BuildingChoice choice) _buildingId = choice.Id;
+            if (_buildings.SelectedItem is ListViewItem { Tag: BuildingChoice choice }) _buildingId = choice.Id;
             PaintRooms();
         };
         _axis.SizeChanged += (_, _) => DrawAxis();
@@ -138,12 +140,12 @@ public sealed class RoomsPage : UserControl
         _status.Text = RoomsText.FreeSummary(free, total) + " \u00b7 " + moment.Label + " \u00b7 " + RoomsText.Disclaimer;
 
         _buildings.Items.Clear();
-        _buildings.Items.Add(new BuildingChoice(AllBuildings, $"All buildings \u00b7 {RoomsText.FreeSummary(free, total)}"));
+        _buildings.Items.Add(BuildingItem(new BuildingChoice(AllBuildings, $"All buildings \u00b7 {RoomsText.FreeSummary(free, total)}")));
         foreach (var item in availability)
-            _buildings.Items.Add(new BuildingChoice(item.Building.Code, $"{item.Building.Name} \u00b7 {item.FreeCount} of {item.RoomCount} free"));
+            _buildings.Items.Add(BuildingItem(new BuildingChoice(item.Building.Code, $"{item.Building.Name} \u00b7 {item.FreeCount} of {item.RoomCount} free")));
         for (var i = 0; i < _buildings.Items.Count; i++)
         {
-            if (_buildings.Items[i] is BuildingChoice choice && choice.Id == _buildingId)
+            if (_buildings.Items[i] is ListViewItem { Tag: BuildingChoice choice } && choice.Id == _buildingId)
             {
                 _buildings.SelectedIndex = i;
                 break;
@@ -180,6 +182,7 @@ public sealed class RoomsPage : UserControl
             {
                 Text = item.Building.Name,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(8, 10, 8, 4),
             });
             var entries = item.Free.Concat(showBusy ? item.Busy : []).ToList();
@@ -340,7 +343,7 @@ public sealed class RoomsPage : UserControl
             var bookings = RoomAvailability.Bookings(room, weekday, weekday == moment.Weekday ? moment.Date : null);
             listHost.Children.Clear();
             var title = weekday == moment.Weekday && _followNow ? $"Today \u00b7 {DaySet.FullNames[weekday]}" : DaySet.FullNames[weekday];
-            listHost.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            listHost.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
             if (bookings.Count == 0)
             {
                 listHost.Children.Add(Chrome.Body("No classes. This room is free all day."));
@@ -361,11 +364,17 @@ public sealed class RoomsPage : UserControl
         var current = weekday == moment.Weekday && booking.Start <= moment.Minutes && moment.Minutes < booking.End;
         var past = weekday == moment.Weekday && booking.End <= moment.Minutes;
         var line = new StackPanel { Spacing = 2 };
-        var code = new TextBlock { Text = booking.Course.ToString(), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = past ? 0.55 : 1 };
+        var code = new TextBlock
+        {
+            Text = booking.Course.ToString(),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Opacity = past ? 0.55 : 1,
+            TextWrapping = TextWrapping.Wrap,
+        };
         line.Children.Add(code);
         if (section?.ClassType is string type) line.Children.Add(Chrome.Body(type));
         if (title.Length > 0) line.Children.Add(Chrome.Body(title));
-        var time = new TextBlock { Text = TimeOfDay.RangeLabel(booking.Start, booking.End), Opacity = 0.75 };
+        var time = new TextBlock { Text = TimeOfDay.RangeLabel(booking.Start, booking.End), Opacity = 0.75, TextWrapping = TextWrapping.Wrap };
         var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -407,6 +416,12 @@ public sealed class RoomsPage : UserControl
     {
         public override string ToString() => Label;
     }
+
+    private static ListViewItem BuildingItem(BuildingChoice choice) => new()
+    {
+        Content = new TextBlock { Text = choice.Label, TextWrapping = TextWrapping.Wrap },
+        Tag = choice,
+    };
 }
 
 /// <summary>One room's school day: free stretches in green, classes in gray, a line at the chosen time.</summary>
@@ -547,7 +562,7 @@ internal sealed class RoomDayColumn : UserControl
                 BorderThickness = new Thickness(3, 1, 1, 1),
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(4, 2, 4, 2),
-                Child = new TextBlock { Text = item.Title, FontSize = 11 },
+                Child = new TextBlock { Text = item.Title, FontSize = 11, TextWrapping = TextWrapping.Wrap },
             };
             Canvas.SetLeft(card, axis + 4);
             Canvas.SetTop(card, top);

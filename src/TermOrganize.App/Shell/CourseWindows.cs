@@ -93,8 +93,13 @@ internal static class CourseDetail
 
     private static Border SectionCard(AppSession session, CourseSection section, string title, string term)
     {
-        var panel = new StackPanel { Spacing = 4 };
-        panel.Children.Add(new TextBlock { Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var panel = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Stretch };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn}",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
         panel.Children.Add(Chrome.Body($"{section.ScheduleSummary} \u00b7 {section.InstructorLabel} \u00b7 {section.Campus}"));
         panel.Children.Add(Chrome.Body($"{section.SeatsLabel}" + (section.HasWaitlist ? $" \u00b7 waitlist {section.WaitlistRemaining}" : "")));
         var watch = new Button { Content = session.Store.IsWatching(section.Crn, term) ? "Watching" : "Watch seats", HorizontalAlignment = HorizontalAlignment.Left };
@@ -175,7 +180,14 @@ internal sealed class CourseWindow : Window
         Title = key.ToString();
         SystemBackdrop = new MicaBackdrop();
         var detail = new StackPanel { Spacing = 8 };
-        Content = new ScrollViewer { Content = detail, Padding = new Thickness(20) };
+        var scroll = new ScrollViewer
+        {
+            Content = detail,
+            Padding = new Thickness(24),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Chrome.KeepInside(scroll);
+        Content = scroll;
         try { AppWindow.Resize(new Windows.Graphics.SizeInt32(760, 840)); } catch (Exception) { }
         CourseDetail.Show(detail, session, key, inWindow: true);
     }
@@ -198,7 +210,8 @@ internal sealed class ProfessorWindow : Window
         Title = entry.DisplayName;
         SystemBackdrop = new MicaBackdrop();
         try { AppWindow.Resize(new Windows.Graphics.SizeInt32(1080, 760)); } catch (Exception) { }
-        var root = new Grid { Padding = new Thickness(16), RowSpacing = 12 };
+        var root = new Grid { Padding = new Thickness(24), RowSpacing = 12 };
+        Chrome.ClipToBounds(root);
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(300) });

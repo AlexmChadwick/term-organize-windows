@@ -41,6 +41,7 @@ public sealed class WatchPage : UserControl
         left.Children.Add(_table);
         var right = Chrome.Details(_detail);
         Content = new PaneSplit(left, right, 520) { Padding = Chrome.PagePadding };
+        Chrome.ClipToBounds(this);
         _table.RowChosen += tag =>
         {
             if (tag is WatchItem item)
@@ -177,7 +178,12 @@ public sealed class WatchPage : UserControl
         _detail.Children.Add(Chrome.Heading(item.CourseKey.ToString()));
         _detail.Children.Add(Chrome.Body(item.CourseTitle));
         _detail.Children.Add(Chrome.Body($"{item.SectionLabel} \u00b7 CRN {item.Crn}"));
-        _detail.Children.Add(new TextBlock { Text = status.Detail(item), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        _detail.Children.Add(new TextBlock
+        {
+            Text = status.Detail(item),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
         if (section is not null)
         {
             _detail.Children.Add(Chrome.Body(section.ScheduleSummary));
@@ -188,7 +194,7 @@ public sealed class WatchPage : UserControl
         alerts.Checked += (_, _) => SaveAlert(item, true);
         alerts.Unchecked += (_, _) => SaveAlert(item, false);
         _detail.Children.Add(alerts);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var actions = new WrapLayout { Spacing = 8 };
         var open = new Button { Content = "Open course" };
         open.Click += (_, _) => CourseWindow.Open(_session, item.CourseKey);
         var copy = new Button { Content = "Copy CRN" };

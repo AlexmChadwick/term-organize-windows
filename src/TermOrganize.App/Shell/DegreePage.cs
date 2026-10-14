@@ -41,11 +41,12 @@ public sealed class DegreePage : UserControl
         var scroll = new ScrollViewer
         {
             Content = left,
-            HorizontalScrollMode = ScrollMode.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
+        Chrome.KeepInside(scroll);
         _split = new PaneSplit(scroll, _requirements, 460) { Padding = Chrome.PagePadding };
         Content = _host;
+        Chrome.ClipToBounds(this);
         _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         Reload();
     }
@@ -171,7 +172,7 @@ public sealed class DegreePage : UserControl
         if (_plan.Completed.Count > 0)
         {
             var done = new StackPanel { Spacing = 2 };
-            done.Children.Add(new TextBlock { Text = "Completed", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            done.Children.Add(new TextBlock { Text = "Completed", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
             foreach (var course in _plan.Completed)
                 done.Children.Add(CourseLine(course, completed: true));
             _terms.Children.Add(Chrome.Card(done));
@@ -186,7 +187,12 @@ public sealed class DegreePage : UserControl
     private StackPanel TermBlock(DegreePlanTerm term, int termIndex)
     {
         var block = new StackPanel { Spacing = 4 };
-        block.Children.Add(new TextBlock { Text = $"{term.Name} \u00b7 {term.Credits:0.#} credits", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        block.Children.Add(new TextBlock
+        {
+            Text = $"{term.Name} \u00b7 {term.Credits:0.#} credits",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
         var blocking = new List<CourseKey>();
         for (var position = 0; position < term.Courses.Count; position++)
         {

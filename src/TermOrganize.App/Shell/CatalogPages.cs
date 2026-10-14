@@ -16,16 +16,24 @@ public sealed class SubjectsPage : UserControl
         var split = Split(list, Chrome.Details(detail));
         Content = split;
         Padding = Chrome.PagePadding;
+        Chrome.ClipToBounds(this);
         if (session.Index is null)
         {
             Chrome.Fill(detail, "Subjects", session.Error ?? "The catalog is still loading.");
             return;
         }
         foreach (var subject in session.Index.ActiveSubjects.OrderBy(s => s.Code))
-            list.Items.Add(subject.Code + " — " + subject.Name);
+        {
+            var label = subject.Code + " — " + subject.Name;
+            list.Items.Add(new ListViewItem
+            {
+                Content = new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap },
+                Tag = label,
+            });
+        }
         list.SelectionChanged += (_, _) =>
         {
-            if (list.SelectedItem is not string label) return;
+            if (list.SelectedItem is not ListViewItem { Tag: string label }) return;
             var code = label.Split(' ')[0];
             detail.Children.Clear();
             detail.Children.Add(Chrome.Heading(label));
@@ -43,7 +51,10 @@ public sealed class SavedPage : UserControl
     public SavedPage(AppSession session)
     {
         var panel = new StackPanel { Spacing = 12, Padding = Chrome.PagePadding, MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Left };
-        Content = new ScrollViewer { Content = panel };
+        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Chrome.KeepInside(scroll);
+        Chrome.ClipToBounds(panel);
+        Content = scroll;
         var term = session.Term?.Code ?? session.Index?.Term.Code;
         panel.Children.Add(Chrome.Heading("Saved"));
         if (term is null || session.Index is null)
@@ -89,6 +100,7 @@ public sealed class ProfessorsPage : UserControl
         Grid.SetRow(_table, 3);
         root.Children.Add(_table);
         Content = root;
+        Chrome.ClipToBounds(root);
         if (session.Index is null)
         {
             _count.Text = session.Error ?? "The catalog is still loading.";

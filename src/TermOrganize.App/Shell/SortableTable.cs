@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace TermOrganize;
@@ -63,6 +64,7 @@ internal sealed class SortableTable : UserControl
         Grid.SetRow(_bodyScroll, 1);
         root.Children.Add(_bodyScroll);
         Content = root;
+        Chrome.ClipToBounds(this);
         ActualThemeChanged += (_, _) =>
         {
             if (_columns.Count > 0)
@@ -79,6 +81,14 @@ internal sealed class SortableTable : UserControl
             _syncingScroll = false;
         };
         MinHeight = 120;
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var size = base.MeasureOverride(availableSize);
+        var width = double.IsInfinity(availableSize.Width) ? size.Width : Math.Min(size.Width, availableSize.Width);
+        var height = double.IsInfinity(availableSize.Height) ? size.Height : Math.Min(size.Height, availableSize.Height);
+        return new Size(Math.Max(0, width), Math.Max(0, height));
     }
 
     public void Show(Column[] columns, IReadOnlyList<Row> rows)

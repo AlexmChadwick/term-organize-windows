@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using TermOrganize.Core;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace TermOrganize;
@@ -27,10 +28,19 @@ internal sealed class WeekCalendarView : UserControl
         _scroll.Content = _canvas;
         Content = _scroll;
         MinHeight = 280;
+        Chrome.ClipToBounds(this);
         ActualThemeChanged += (_, _) =>
         {
             if (_shown) Paint();
         };
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var size = base.MeasureOverride(availableSize);
+        var width = double.IsInfinity(availableSize.Width) ? size.Width : Math.Min(size.Width, availableSize.Width);
+        var height = double.IsInfinity(availableSize.Height) ? size.Height : Math.Min(size.Height, availableSize.Height);
+        return new Size(Math.Max(0, width), Math.Max(0, height));
     }
 
     public void Show(IReadOnlyList<CourseSection> sections, Func<CourseKey, int> colorIndex, int startHour, int endHour, bool showWeekends)

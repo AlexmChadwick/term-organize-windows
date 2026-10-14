@@ -51,6 +51,30 @@ internal sealed class PaneSplit : Grid
         SizeChanged += (_, _) => Fit();
     }
 
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var size = base.MeasureOverride(availableSize);
+        var width = double.IsInfinity(availableSize.Width) ? size.Width : Math.Min(size.Width, availableSize.Width);
+        var height = double.IsInfinity(availableSize.Height) ? size.Height : Math.Min(size.Height, availableSize.Height);
+        return new Size(Math.Max(0, width), Math.Max(0, height));
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var size = base.ArrangeOverride(finalSize);
+        var width = finalSize.Width - Padding.Left - Padding.Right;
+        var height = finalSize.Height - Padding.Top - Padding.Bottom;
+        if (width > 1 && height > 1)
+        {
+            var rect = new Rect(Padding.Left, Padding.Top, width, height);
+            if (Clip is RectangleGeometry geometry)
+                geometry.Rect = rect;
+            else
+                Clip = new RectangleGeometry { Rect = rect };
+        }
+        return size;
+    }
+
     private void PaintThumb(bool hot)
     {
         _thumbHot = hot;
@@ -70,12 +94,17 @@ internal sealed class PaneSplit : Grid
     private void Fit()
     {
         if (ActualWidth <= 0) return;
-        var rightFloor = Math.Min(320, Math.Max(240, ActualWidth * 0.38));
-        var available = Math.Max(0, ActualWidth - 12);
+        // Column widths are laid out inside Padding. ActualWidth includes it, so using it raw
+        // pushed the right pane through the page margin and into the window edge.
+        var inner = Math.Max(0, ActualWidth - Padding.Left - Padding.Right);
+        if (inner < 1) return;
+        var rightFloor = Math.Min(320, Math.Max(160, inner * 0.38));
+        var available = Math.Max(0, inner - 12);
         if (rightFloor > available * 0.55)
-            rightFloor = Math.Max(160, available * 0.45);
+            rightFloor = Math.Max(120, available * 0.45);
+        rightFloor = Math.Min(rightFloor, available);
         _right.MinWidth = rightFloor;
-        var maxLeft = Math.Max(120, ActualWidth - 12 - rightFloor);
+        var maxLeft = Math.Max(80, inner - 12 - rightFloor);
         _left.MaxWidth = Math.Min(720, maxLeft);
         _left.MinWidth = Math.Min(160, _left.MaxWidth);
         var current = _left.Width.IsAbsolute ? _left.Width.Value : _preferred;

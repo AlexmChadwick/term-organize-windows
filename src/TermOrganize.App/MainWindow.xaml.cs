@@ -703,13 +703,27 @@ public sealed partial class MainWindow : Window
     {
         var campuses = App.Session.Index?.CampusNames.ToList() ?? [];
         var survey = new PreferencesSurvey(new SchedulePreferences(), campuses);
-        ShowCaptureCard(new ScrollViewer
+        var scroll = Chrome.ConstrainedScroll(survey, Chrome.DialogViewport(Root.ActualHeight));
+        var buttons = new StackPanel
         {
-            Content = survey,
-            MaxHeight = 620,
-            HorizontalScrollMode = ScrollMode.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        });
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 8,
+        };
+        buttons.Children.Add(new Button { Content = "Cancel" });
+        var done = new Button { Content = "Done" };
+        if (Chrome.StyleOf("AccentButtonStyle") is Style accent) done.Style = accent;
+        buttons.Children.Add(done);
+        var body = new Grid { RowSpacing = 12 };
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.Children.Add(Chrome.Heading("Your ideal week"));
+        Grid.SetRow(scroll, 1);
+        body.Children.Add(scroll);
+        Grid.SetRow(buttons, 2);
+        body.Children.Add(buttons);
+        ShowCaptureCard(body);
     }
 
     private void ShowAboutOverlay()
@@ -765,7 +779,7 @@ public sealed partial class MainWindow : Window
         {
             RequestedTheme = theme,
             MaxWidth = 560,
-            MaxHeight = 680,
+            MaxHeight = Root.ActualHeight > 120 ? Root.ActualHeight - 48 : 680,
             Padding = new Thickness(24),
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),

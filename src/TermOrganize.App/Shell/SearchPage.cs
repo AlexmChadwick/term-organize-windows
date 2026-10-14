@@ -39,7 +39,7 @@ public sealed class SearchPage : UserControl
         filters.Children.Add(_campus);
         filters.Children.Add(_all);
         filters.Children.Add(_clear);
-        var left = new Grid();
+        var left = new Grid { RowSpacing = 12 };
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

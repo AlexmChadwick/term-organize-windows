@@ -62,6 +62,28 @@ internal static class Chrome
         Opacity = 0.85,
     };
 
+    /// <summary>
+    /// A fixed-height scroller. An unconstrained ScrollViewer grows with its content, so a dialog
+    /// footer below it would sit past the window.
+    /// </summary>
+    public static ScrollViewer ConstrainedScroll(UIElement content, double height) => new()
+    {
+        Content = content,
+        Height = height,
+        MaxHeight = height,
+        HorizontalScrollMode = ScrollMode.Disabled,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        VerticalScrollMode = ScrollMode.Enabled,
+        VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
+    };
+
+    /// <summary>Leaves room for a dialog title, the pinned buttons, and the window chrome.</summary>
+    public static double DialogViewport(double windowHeight)
+    {
+        var height = windowHeight > 1 ? windowHeight : 900;
+        return Math.Clamp(height - 280, 220, 480);
+    }
+
     public static ScrollViewer Details(UIElement content) => new()
     {
         Content = content,

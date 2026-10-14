@@ -15,16 +15,42 @@ internal sealed class WeekCalendarView : UserControl
 {
     private readonly Canvas _canvas = new();
     private readonly ScrollViewer _scroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    private IReadOnlyList<CourseSection> _sections = [];
+    private Func<CourseKey, int> _colorIndex = _ => 0;
+    private int _startHour = 8;
+    private int _endHour = 18;
+    private bool _showWeekends = true;
+    private bool _shown;
 
     public WeekCalendarView()
     {
         _scroll.Content = _canvas;
         Content = _scroll;
         MinHeight = 280;
+        ActualThemeChanged += (_, _) =>
+        {
+            if (_shown) Paint();
+        };
     }
 
     public void Show(IReadOnlyList<CourseSection> sections, Func<CourseKey, int> colorIndex, int startHour, int endHour, bool showWeekends)
     {
+        _sections = sections;
+        _colorIndex = colorIndex;
+        _startHour = startHour;
+        _endHour = endHour;
+        _showWeekends = showWeekends;
+        _shown = true;
+        Paint();
+    }
+
+    private void Paint()
+    {
+        var sections = _sections;
+        var colorIndex = _colorIndex;
+        var startHour = _startHour;
+        var endHour = _endHour;
+        var showWeekends = _showWeekends;
         var events = new List<CalendarEvent>();
         foreach (var section in sections)
             events.AddRange(CalendarEvent.Events(section, CourseColor.At(colorIndex(section.CourseKey)), title: section.CourseKey.ToString()));
@@ -33,7 +59,7 @@ internal sealed class WeekCalendarView : UserControl
         startHour = Math.Clamp(startHour, 0, 22);
         endHour = Math.Clamp(Math.Max(endHour, startHour + 1), startHour + 1, 24);
         const double hourHeight = 48;
-        const double axis = 52;
+        const double axis = 72;
         const double dayWidth = 128;
         var height = (endHour - startHour) * hourHeight;
         _canvas.Children.Clear();
@@ -44,7 +70,7 @@ internal sealed class WeekCalendarView : UserControl
         {
             var y = 24 + (hour - startHour) * hourHeight;
             _canvas.Children.Add(Line(axis, y, _canvas.Width, y, Color.FromArgb(40, 128, 128, 128)));
-            var label = new TextBlock { Text = TimeOfDay.Label(hour * 60), FontSize = 11, Opacity = 0.7 };
+            var label = HourLabel(TimeOfDay.Label(hour * 60));
             Canvas.SetLeft(label, 0);
             Canvas.SetTop(label, y - 8);
             _canvas.Children.Add(label);
@@ -104,6 +130,20 @@ internal sealed class WeekCalendarView : UserControl
                 _canvas.Children.Add(Line(axis + dayIndex * dayWidth, y, axis + (dayIndex + 1) * dayWidth, y, Color.FromArgb(220, 200, 16, 46)));
             }
         }
+    }
+
+    private TextBlock HourLabel(string text)
+    {
+        var theme = ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        var label = new TextBlock
+        {
+            Text = text,
+            Style = Chrome.StyleOf("CaptionTextBlockStyle"),
+            Foreground = Chrome.ThemedBrush(theme, "TextFillColorSecondaryBrush",
+                theme == ElementTheme.Dark ? Color.FromArgb(255, 200, 200, 200) : Color.FromArgb(255, 96, 96, 96)),
+        };
+        if (label.Style is null) label.FontSize = 12;
+        return label;
     }
 
     private static List<int> DaysToShow(IReadOnlyList<CalendarEvent> events, bool showWeekends)

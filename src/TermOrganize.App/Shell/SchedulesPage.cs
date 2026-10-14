@@ -99,13 +99,14 @@ public sealed class SchedulesPage : UserControl
         if (_plan is null) return;
         var campuses = _session.Index?.CampusNames.ToList() ?? [];
         var survey = new PreferencesSurvey(_plan.Preferences ?? new SchedulePreferences(), campuses);
+        var windowHeight = XamlRoot?.Size.Height ?? _window.Content.XamlRoot?.Size.Height ?? 0;
         var dialog = new ContentDialog
         {
             Title = "Your ideal week",
             PrimaryButtonText = "Done",
             CloseButtonText = "Cancel",
             XamlRoot = XamlRoot ?? _window.Content.XamlRoot,
-            Content = new ScrollViewer { Content = survey, MaxHeight = 640 },
+            Content = Chrome.ConstrainedScroll(survey, Chrome.DialogViewport(windowHeight)),
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         var preferences = survey.Read();

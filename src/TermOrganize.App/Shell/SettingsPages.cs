@@ -20,7 +20,7 @@ public sealed class SettingsPage : UserControl
         _window = window;
         var panel = new StackPanel
         {
-            Spacing = 16,
+            Spacing = 8,
             Padding = Chrome.PagePadding,
             MaxWidth = 720,
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -33,7 +33,7 @@ public sealed class SettingsPage : UserControl
         panel.Children.Add(Chrome.Body(LegalText.SourceOffer));
 
         var prefs = session.Store.Preferences;
-        panel.Children.Add(Chrome.Heading("Search and courses"));
+        panel.Children.Add(Chrome.Section("Search and courses"));
         var campus = new ComboBox { Header = "Preferred campus", MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
         campus.Items.Add("None");
         foreach (var name in session.Index?.CampusNames ?? []) campus.Items.Add(name);
@@ -53,7 +53,7 @@ public sealed class SettingsPage : UserControl
         panel.Children.Add(auto);
         panel.Children.Add(Chrome.Body("Opening a course fetches live seat counts from Northeastern."));
 
-        panel.Children.Add(Chrome.Heading("Calendar"));
+        panel.Children.Add(Chrome.Section("Calendar"));
         var weekends = new CheckBox { Content = "Show weekends on the calendar", IsChecked = prefs.ShowWeekends };
         weekends.Checked += (_, _) => SavePrefs(p => p.ShowWeekends = true);
         weekends.Unchecked += (_, _) => SavePrefs(p => p.ShowWeekends = false);
@@ -77,7 +77,7 @@ public sealed class SettingsPage : UserControl
         panel.Children.Add(start);
         panel.Children.Add(end);
 
-        panel.Children.Add(Chrome.Heading("Seat alerts"));
+        panel.Children.Add(Chrome.Section("Seat alerts"));
         panel.Children.Add(Chrome.Body("You\u2019re notified on this PC when a seat or waitlist spot opens in a section you watch. No account or phone number is involved."));
         var background = new CheckBox { Content = "Check for open seats automatically", IsChecked = prefs.BackgroundRefreshEnabled };
         background.Checked += (_, _) => SaveSeat(p => p.BackgroundRefreshEnabled = true);
@@ -117,8 +117,8 @@ public sealed class SettingsPage : UserControl
         panel.Children.Add(test);
         panel.Children.Add(Chrome.Body("Checks run while Term Organize is open, including from the tray. With automatic checking on, a scheduled task keeps checking after Exit. Packaged installs also register a Windows timer task. Those background checks run at least every 15 minutes. Toasts that couldn\u2019t be shown appear the next time you open the app."));
 
-        panel.Children.Add(Chrome.Heading("Your data"));
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        panel.Children.Add(Chrome.Section("Your data"));
+        var buttons = new WrapLayout { Spacing = 8 };
         var export = new Button { Content = "Export data" };
         export.Click += (_, _) =>
         {
@@ -140,7 +140,7 @@ public sealed class SettingsPage : UserControl
             FontSize = 12,
             IsTextSelectionEnabled = true,
         };
-        panel.Children.Add(Chrome.Heading("License"));
+        panel.Children.Add(Chrome.Section("License"));
         panel.Children.Add(license);
         _filling = false;
     }

@@ -190,7 +190,7 @@ jobs:
           $p = Start-Process -FilePath $exe -ArgumentList '--screenshot-sweep',"`"$out`"" -PassThru -WorkingDirectory $unpackaged -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           $timedOut = $false
           try {
-            Wait-Process -Id $p.Id -Timeout 300 -ErrorAction Stop
+            Wait-Process -Id $p.Id -Timeout 420 -ErrorAction Stop
           } catch {
             $timedOut = $true
           }
@@ -203,11 +203,11 @@ jobs:
           $exit = $null
           if ($p.HasExited) { $exit = $p.ExitCode }
           $pngs = @(Get-ChildItem $out -Filter *.png -ErrorAction SilentlyContinue)
-          if ($timedOut -or $null -eq $exit -or $exit -ne 0 -or $pngs.Count -lt 36) {
+          if ($timedOut -or $null -eq $exit -or $exit -ne 0 -or $pngs.Count -lt 60) {
             Show-SweepDiagnostics
-            if ($timedOut) { throw "UI sweep timed out after 300 seconds (exit $exit, $($pngs.Count) screenshots)." }
-            if ($null -eq $exit -or $exit -ne 0) { throw "UI sweep exit code $exit; wrote $($pngs.Count) screenshots; expected 36." }
-            throw "UI sweep wrote $($pngs.Count) screenshots; expected 36."
+            if ($timedOut) { throw "UI sweep timed out after 420 seconds (exit $exit, $($pngs.Count) screenshots)." }
+            if ($null -eq $exit -or $exit -ne 0) { throw "UI sweep exit code $exit; wrote $($pngs.Count) screenshots; expected at least 60." }
+            throw "UI sweep wrote $($pngs.Count) screenshots; expected at least 60."
           }
           Write-Host "UI sweep wrote $($pngs.Count) screenshots, exit $exit."
 

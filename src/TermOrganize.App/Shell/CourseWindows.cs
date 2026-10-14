@@ -37,7 +37,7 @@ internal static class CourseDetail
         var standing = CourseDegreePlanStandingLookup.For(session.Store, key);
         if (standing is not null) detail.Children.Add(Chrome.Body(standing.Text));
 
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var actions = new WrapLayout { Spacing = 8 };
         var save = new Button { Content = session.Store.IsSaved(key, index.Term.Code) ? "Saved" : "Save" };
         save.Click += (_, _) =>
         {

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 
 namespace TermOrganize;
 
@@ -62,6 +63,14 @@ internal sealed class SortableTable : UserControl
         Grid.SetRow(_bodyScroll, 1);
         root.Children.Add(_bodyScroll);
         Content = root;
+        ActualThemeChanged += (_, _) =>
+        {
+            if (_columns.Count > 0)
+            {
+                PaintHeader();
+                PaintRows();
+            }
+        };
         _bodyScroll.ViewChanged += (_, _) =>
         {
             if (_syncingScroll) return;
@@ -96,10 +105,10 @@ internal sealed class SortableTable : UserControl
                 Content = title,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = (Brush)Application.Current.Resources["SubtleFillColorTransparentBrush"],
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(8, 4, 8, 4),
             };
+            QuietButton(button);
             var index = i;
             button.Click += (_, _) =>
             {
@@ -152,8 +161,8 @@ internal sealed class SortableTable : UserControl
                 grid.Children.Add(block);
             }
             var stripeBrush = stripe
-                ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"]
-                : (Brush)Application.Current.Resources["SubtleFillColorTransparentBrush"];
+                ? Themed("SubtleFillColorSecondaryBrush", Color.FromArgb(16, 128, 128, 128))
+                : Themed("SubtleFillColorTransparentBrush", Color.FromArgb(0, 0, 0, 0));
             stripe = !stripe;
             var card = new Border
             {
@@ -190,8 +199,32 @@ internal sealed class SortableTable : UserControl
     {
         if (_selected is not null && _idle.TryGetValue(_selected, out var idle))
             _selected.Background = idle;
-        card.Background = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"];
+        card.Background = Themed("AccentFillColorDefaultBrush", Color.FromArgb(255, 0, 95, 184));
         _selected = card;
         RowChosen?.Invoke(tag);
+    }
+
+    private Brush Themed(string key, Color fallback)
+    {
+        var theme = ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        return Chrome.ThemedBrush(theme, key, fallback);
+    }
+
+    private void QuietButton(Button button)
+    {
+        var theme = ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        var bg = Themed("SubtleFillColorTransparentBrush", Color.FromArgb(0, 0, 0, 0));
+        var hover = Themed("SubtleFillColorSecondaryBrush", Color.FromArgb(24, 128, 128, 128));
+        var fg = Chrome.ThemedBrush(theme, "TextFillColorPrimaryBrush",
+            theme == ElementTheme.Dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 27, 27, 27));
+        button.Background = bg;
+        button.Foreground = fg;
+        button.Resources["ButtonBackground"] = bg;
+        button.Resources["ButtonBackgroundPointerOver"] = hover;
+        button.Resources["ButtonBackgroundPressed"] = hover;
+        button.Resources["ButtonForeground"] = fg;
+        button.Resources["ButtonForegroundPointerOver"] = fg;
+        button.Resources["ButtonBorderBrush"] = bg;
+        button.Resources["ButtonBorderBrushPointerOver"] = hover;
     }
 }

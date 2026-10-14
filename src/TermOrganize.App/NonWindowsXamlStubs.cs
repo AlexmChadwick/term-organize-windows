@@ -19,12 +19,17 @@ public partial class App
 
 public sealed partial class MainWindow
 {
+    internal Grid Root = null!;
     internal Grid TitleBar = null!;
+    internal Grid DragRegion = null!;
     internal ColumnDefinition CaptionSpacer = null!;
     internal ComboBox TermPicker = null!;
+    internal Button ThemeButton = null!;
+    internal MenuBar Commands = null!;
     internal NavigationView Nav = null!;
     internal Grid Host = null!;
     internal TextBlock Disclaimer = null!;
+    internal Grid CaptureLayer = null!;
 
     public void InitializeComponent()
     {

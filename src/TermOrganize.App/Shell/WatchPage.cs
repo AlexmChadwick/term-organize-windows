@@ -39,7 +39,7 @@ public sealed class WatchPage : UserControl
         left.Children.Add(bar);
         Grid.SetRow(_table, 1);
         left.Children.Add(_table);
-        var right = new ScrollViewer { Content = _detail, Padding = new Thickness(16, 0, 0, 0) };
+        var right = Chrome.Details(_detail);
         Content = new PaneSplit(left, right, 520) { Padding = Chrome.PagePadding };
         _table.RowChosen += tag =>
         {

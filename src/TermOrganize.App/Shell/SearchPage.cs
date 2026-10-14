@@ -48,7 +48,7 @@ public sealed class SearchPage : UserControl
         left.Children.Add(filters);
         Grid.SetRow(_results, 2);
         left.Children.Add(_results);
-        var scroll = new ScrollViewer { Content = _detail, Padding = new Thickness(16, 0, 0, 0) };
+        var scroll = Chrome.Details(_detail);
         Content = new PaneSplit(left, scroll, 420) { Padding = Chrome.PagePadding };
 
         _query.TextChanged += (_, _) => { if (!_filling) Run(_query.Text); };

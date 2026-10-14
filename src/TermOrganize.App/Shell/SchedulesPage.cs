@@ -272,7 +272,32 @@ public sealed class SchedulesPage : UserControl
         return panel;
     }
 
-    private void Generate()
+    public void GenerateForCapture()
+    {
+        if (_session.Index is null) return;
+        var term = _session.Term?.Code ?? _session.Index.Term.Code;
+        var plan = _session.Store.PrimaryPlan(term) ?? _session.Store.CreatePlan("Schedule", term);
+        var picks = _session.Index.Courses
+            .Select(course => (course.Key, Count: _session.Index.Sections(course.Key).Count))
+            .Where(item => item.Count is > 0 and <= 8)
+            .Take(3)
+            .Select(item => item.Key)
+            .ToList();
+        if (picks.Count == 0)
+        {
+            picks = _session.Index.Courses
+                .Where(course => _session.Index.Sections(course.Key).Count > 0)
+                .Take(2)
+                .Select(course => course.Key)
+                .ToList();
+        }
+        foreach (var key in picks)
+            _session.Store.AddCourse(key, plan.Id);
+        ReloadPlans();
+        Generate(applyFirst: true);
+    }
+
+    private void Generate(bool applyFirst = false)
     {
         if (_plan is null || _session.Index is null) return;
         var inputs = _plan.Courses.Select(course => new ScheduleCourseInput
@@ -303,6 +328,13 @@ public sealed class SchedulesPage : UserControl
             };
             panel.Children.Add(use);
             _results.Children.Add(Chrome.Card(panel));
+        }
+        if (applyFirst && result.Schedules.Count > 0)
+        {
+            var crns = result.Schedules[0].Crns.ToList();
+            _session.Store.UpdatePlan(_plan.Id, plan => plan.SelectedCRNs = crns);
+            var selected = SelectedSections().ToList();
+            _week.Show(selected, key => _plan.Course(key)?.ColorIndex ?? 0, _session.Store.Preferences.CalendarStartHour, _session.Store.Preferences.CalendarEndHour, _session.Store.Preferences.ShowWeekends);
         }
     }
 

@@ -13,8 +13,10 @@ using Windows.Storage.Streams;
 namespace TermOrganize;
 
 /// <summary>
-/// <c>--screenshot-sweep &lt;directory&gt;</c> walks every sidebar page in light and dark
-/// at 1440×900 and 800×900 and writes a PNG of the window from <see cref="RenderTargetBitmap"/>.
+/// <c>--screenshot-sweep &lt;directory&gt;</c> walks every sidebar page, then course detail,
+/// generated schedules, the survey, a populated watchlist, About, and the welcome dialog,
+/// in light and dark at 1440×900 and 800×900. Popups are not in the visual tree, so those
+/// states are drawn as overlays and captured with <see cref="RenderTargetBitmap"/>.
 /// </summary>
 internal static class ScreenshotSweep
 {
@@ -39,6 +41,11 @@ internal static class ScreenshotSweep
     private static readonly string[] Pages =
     [
         "search", "subjects", "saved", "professors", "rooms", "schedules", "degree", "watch", "settings",
+    ];
+
+    private static readonly string[] States =
+    [
+        "course", "generated", "survey", "watch-items", "about", "dialog",
     ];
 
     public static void Configure(string[] args)
@@ -214,17 +221,33 @@ internal static class ScreenshotSweep
                 window.ApplyCaptureTheme(theme.Theme);
                 await Task.Delay(150);
                 foreach (var page in Pages)
-                {
-                    Log($"page {theme.Name} {size.Name} {page}");
-                    window.PrepareCapture(page);
-                    root.UpdateLayout();
-                    await Task.Delay(120);
-                    var path = Path.Combine(Directory, $"{theme.Name}-{size.Name}-{page}.png");
-                    await SaveAsync(root, path);
-                }
+                    await Shot(window, root, theme.Name, size.Name, page);
             }
         }
+        foreach (var size in Sizes)
+        {
+            window.ResizeForCapture(size.Width, size.Height);
+            await Task.Delay(200);
+            foreach (var theme in Themes)
+            {
+                window.ApplyCaptureTheme(theme.Theme);
+                await Task.Delay(150);
+                foreach (var state in States)
+                    await Shot(window, root, theme.Name, size.Name, state);
+            }
+        }
+        window.HideCaptureOverlay();
         Log("capture finished");
+    }
+
+    private static async Task Shot(MainWindow window, FrameworkElement root, string theme, string size, string page)
+    {
+        Log($"page {theme} {size} {page}");
+        window.PrepareCapture(page);
+        root.UpdateLayout();
+        await Task.Delay(120);
+        var path = Path.Combine(Directory, $"{theme}-{size}-{page}.png");
+        await SaveAsync(root, path);
     }
 
     private static async Task SaveAsync(UIElement element, string path)

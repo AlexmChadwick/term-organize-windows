@@ -47,7 +47,7 @@ internal sealed class PreferencesSurvey : StackPanel
     {
         _draft = start.Clone();
         _campuses = campuses;
-        Spacing = 16;
+        Spacing = 12;
         Build();
     }
 
@@ -406,7 +406,12 @@ internal sealed class PreferencesSurvey : StackPanel
         return panel;
     }
 
-    private static TextBlock Heading(string text) => new() { Text = text, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, FontSize = 16 };
+    private static TextBlock Heading(string text)
+    {
+        var block = Chrome.Section(text);
+        block.Margin = new Thickness(0);
+        return block;
+    }
 
     private static TextBlock Sub(string text) => new() { Text = text, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
 

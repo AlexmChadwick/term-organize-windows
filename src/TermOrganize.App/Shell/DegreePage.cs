@@ -14,9 +14,11 @@ public sealed class DegreePage : UserControl
 {
     private readonly AppSession _session;
     private readonly MainWindow _window;
-    private readonly ComboBox _plans = new() { MinWidth = 240 };
+    private readonly ComboBox _plans = new() { MinWidth = 240, PlaceholderText = "Choose a degree plan" };
     private readonly StackPanel _terms = new() { Spacing = 8 };
     private readonly DegreeRequirementsPane _requirements;
+    private readonly Grid _host = new();
+    private readonly PaneSplit _split;
     private DegreePlan? _plan;
     private OfferingHistory _history = OfferingHistory.Empty;
     private bool _filling;
@@ -36,8 +38,14 @@ public sealed class DegreePage : UserControl
         left.Children.Add(Chrome.Heading("Degree plans"));
         left.Children.Add(bar);
         left.Children.Add(_terms);
-        var scroll = new ScrollViewer { Content = left };
-        Content = new PaneSplit(scroll, _requirements, 460) { Padding = Chrome.PagePadding };
+        var scroll = new ScrollViewer
+        {
+            Content = left,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        _split = new PaneSplit(scroll, _requirements, 460) { Padding = Chrome.PagePadding };
+        Content = _host;
         _plans.SelectionChanged += (_, _) => { if (!_filling) ShowPlan(); };
         Reload();
     }
@@ -77,12 +85,67 @@ public sealed class DegreePage : UserControl
         _filling = false;
         if (_plans.Items.Count == 0)
         {
+            _plan = null;
             _terms.Children.Clear();
-            _terms.Children.Add(Chrome.Body("Import a degree audit PDF with Ctrl+O, or create a plan from the File menu."));
+            ShowEmpty();
             return;
         }
+        ShowSplit();
         _plans.SelectedIndex = 0;
         ShowPlan();
+    }
+
+    private void ShowEmpty()
+    {
+        _host.Children.Clear();
+        var icon = new FontIcon
+        {
+            Glyph = "\uE7BE",
+            FontSize = 40,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Opacity = 0.85,
+        };
+        var title = Chrome.Heading("No degree plan yet");
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.TextAlignment = TextAlignment.Center;
+        var body = Chrome.Body("Import a degree audit PDF, or start a plan and add your semesters.");
+        body.HorizontalAlignment = HorizontalAlignment.Center;
+        body.TextAlignment = TextAlignment.Center;
+        var create = new Button { Content = "New degree plan", HorizontalAlignment = HorizontalAlignment.Center };
+        if (Chrome.StyleOf("AccentButtonStyle") is Style accent) create.Style = accent;
+        create.Click += (_, _) =>
+        {
+            _session.Store.AddDegreePlan(new DegreePlan
+            {
+                Name = "Degree Plan",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            Reload();
+        };
+        var import = new Button { Content = "Import degree audit\u2026", HorizontalAlignment = HorizontalAlignment.Center };
+        import.Click += (_, _) => _ = _window.ImportDegreeAsync();
+        var stack = new StackPanel
+        {
+            Spacing = 12,
+            MaxWidth = 420,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = Chrome.PagePadding,
+        };
+        stack.Children.Add(icon);
+        stack.Children.Add(title);
+        stack.Children.Add(body);
+        stack.Children.Add(create);
+        stack.Children.Add(import);
+        _host.Children.Add(stack);
+    }
+
+    private void ShowSplit()
+    {
+        if (_host.Children.Count == 1 && ReferenceEquals(_host.Children[0], _split)) return;
+        _host.Children.Clear();
+        _host.Children.Add(_split);
     }
 
     private void ShowPlan()

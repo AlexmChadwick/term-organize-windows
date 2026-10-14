@@ -16,7 +16,7 @@ internal sealed class DegreeRequirementsPane : UserControl
     private readonly AppSession _session;
     private readonly MainWindow _window;
     private readonly Action? _onEdited;
-    private readonly StackPanel _body = new() { Spacing = 10 };
+    private readonly StackPanel _body = new() { Spacing = 12 };
     private DegreePlan? _plan;
     private ProgramRequirements? _requirements;
     private DegreeCourseAttributes _attributes = DegreeCourseAttributes.None;
@@ -33,7 +33,7 @@ internal sealed class DegreeRequirementsPane : UserControl
         _session = session;
         _window = window;
         _onEdited = onEdited;
-        Content = new ScrollViewer { Content = _body, Padding = new Thickness(16, 0, 0, 16) };
+        Content = Chrome.Details(_body);
     }
 
     public void Show(DegreePlan plan, OfferingHistory history)

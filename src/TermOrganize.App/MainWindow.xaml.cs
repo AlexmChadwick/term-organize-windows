@@ -12,6 +12,7 @@ using TermOrganize.Core;
 using Windows.ApplicationModel.Activation;
 using Windows.Storage.Pickers;
 using Windows.System;
+using Windows.UI;
 
 namespace TermOrganize;
 
@@ -20,6 +21,12 @@ public sealed partial class MainWindow : Window
     private string _area = "search";
     private bool _fillingTerms;
     private bool _exiting;
+    private bool _mica;
+    private bool _suppressNav;
+    private bool _syncingChrome;
+    private bool _compact;
+    private double _appliedInset = -1;
+    private int _captureWidth;
     private int _termGeneration;
     private CatalogIndex? _shownIndex;
     private string? _shownError;
@@ -43,14 +50,17 @@ public sealed partial class MainWindow : Window
         try
         {
             SystemBackdrop = new MicaBackdrop();
+            _mica = true;
         }
         catch (Exception)
         {
-            // Some Windows SKUs have no Mica backdrop. The Fluent theme still applies.
+            // Some Windows SKUs have no Mica backdrop. SolidBackgroundFillColorBase covers the window.
         }
         ExtendsContentIntoTitleBar = true;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
-        SetTitleBar(TitleBar);
+        // Only the title text is the drag region. The term box and theme button stay real controls.
+        SetTitleBar(DragRegion);
+        Root.SizeChanged += (_, _) => SyncChromeMetrics();
         Activated += (_, _) => SyncCaptionSpacer();
         AppWindow.Closing += (_, args) =>
         {
@@ -168,6 +178,7 @@ public sealed partial class MainWindow : Window
 
     private void NavChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (_suppressNav) return;
         if (args.IsSettingsSelected) { Show("settings"); return; }
         if (args.SelectedItem is NavigationViewItem item && item.Tag is string tag) Show(tag);
     }
@@ -256,18 +267,180 @@ public sealed partial class MainWindow : Window
 
     private void ToggleTheme(object sender, RoutedEventArgs e)
     {
-        var root = (FrameworkElement)Content;
-        root.RequestedTheme = root.RequestedTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        var next = Root.ActualTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        ApplyTheme(next);
         Directory.CreateDirectory(Path.GetDirectoryName(_themePath)!);
-        File.WriteAllText(_themePath, root.RequestedTheme.ToString());
+        File.WriteAllText(_themePath, next.ToString());
     }
 
     private void ApplySavedTheme()
     {
-        if (!File.Exists(_themePath)) return;
-        var name = File.ReadAllText(_themePath).Trim();
-        if (Enum.TryParse<ElementTheme>(name, out var theme))
-            ((FrameworkElement)Content).RequestedTheme = theme;
+        var theme = Root.ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        if (File.Exists(_themePath)
+            && Enum.TryParse<ElementTheme>(File.ReadAllText(_themePath).Trim(), out var saved)
+            && saved is ElementTheme.Light or ElementTheme.Dark)
+            theme = saved;
+        ApplyTheme(theme);
+    }
+
+    /// <summary>
+    /// Element.RequestedTheme on the root, the title bar, and the pane.
+    /// Application.RequestedTheme cannot change after startup, and a Default element theme
+    /// leaves the pane and caption controls on the wrong brushes.
+    /// </summary>
+    private void ApplyTheme(ElementTheme theme)
+    {
+        if (theme == ElementTheme.Default)
+            theme = Root.ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        // Brushes are assigned before the theme flip so the selected pill does not keep the previous theme.
+        PaintChrome(theme);
+        void Apply(FrameworkElement element)
+        {
+            element.RequestedTheme = ElementTheme.Default;
+            element.RequestedTheme = theme;
+        }
+        Apply(Root);
+        Apply(TitleBar);
+        Apply(Nav);
+        Apply(Commands);
+        Apply(TermPicker);
+        Apply(ThemeButton);
+        foreach (var item in Nav.MenuItems.OfType<NavigationViewItem>())
+            Apply(item);
+        if (Nav.SettingsItem is NavigationViewItem settings)
+            Apply(settings);
+        var selected = Nav.SelectedItem;
+        _suppressNav = true;
+        Nav.SelectedItem = null;
+        Nav.SelectedItem = selected;
+        _suppressNav = false;
+    }
+
+    private void PaintChrome(ElementTheme theme)
+    {
+        var dark = theme == ElementTheme.Dark;
+        var page = Chrome.ThemedBrush(theme, "SolidBackgroundFillColorBaseBrush",
+            dark ? Color.FromArgb(255, 32, 32, 32) : Color.FromArgb(255, 243, 243, 243));
+        var fill = Chrome.ThemedBrush(theme, "ControlFillColorDefaultBrush",
+            dark ? Color.FromArgb(255, 51, 51, 51) : Color.FromArgb(255, 255, 255, 255));
+        var hover = Chrome.ThemedBrush(theme, "ControlFillColorSecondaryBrush",
+            dark ? Color.FromArgb(255, 69, 69, 69) : Color.FromArgb(255, 246, 246, 246));
+        var fg = Chrome.ThemedBrush(theme, "TextFillColorPrimaryBrush",
+            dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 27, 27, 27));
+        var stroke = Chrome.ThemedBrush(theme, "ControlStrokeColorDefaultBrush",
+            dark ? Color.FromArgb(255, 96, 96, 96) : Color.FromArgb(255, 200, 200, 200));
+        var muted = Chrome.ThemedBrush(theme, "TextFillColorSecondaryBrush",
+            dark ? Color.FromArgb(255, 200, 200, 200) : Color.FromArgb(255, 96, 96, 96));
+        // Mica shows through a transparent root. Screenshots and SKUs without Mica use the solid fill,
+        // because RenderTargetBitmap records a transparent Mica surface as black.
+        var showMica = _mica && !ScreenshotSweep.Enabled;
+        Root.Background = showMica ? new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)) : page;
+        TitleBar.Background = page;
+        Commands.Background = page;
+        Nav.Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+        // The pane template uses a transparent or acrylic brush, which captures as black.
+        Nav.Resources["NavigationViewExpandedPaneBackground"] = page;
+        Nav.Resources["NavigationViewDefaultPaneBackground"] = page;
+        Nav.Resources["NavigationViewContentBackground"] = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+        Nav.Resources["NavigationViewBorderThickness"] = new Thickness(0);
+        Nav.Resources["NavigationViewPaneContentGridMargin"] = new Thickness(0);
+        var ink = dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(0xE4, 0, 0, 0);
+        var pill = dark ? Color.FromArgb(0x2A, 255, 255, 255) : Color.FromArgb(0x1A, 0, 0, 0);
+        var hoverFill = dark ? Color.FromArgb(0x14, 255, 255, 255) : Color.FromArgb(0x0F, 0, 0, 0);
+        var pressedFill = dark ? Color.FromArgb(0x1F, 255, 255, 255) : Color.FromArgb(0x18, 0, 0, 0);
+        var selectedHover = dark ? Color.FromArgb(0x33, 255, 255, 255) : Color.FromArgb(0x26, 0, 0, 0);
+        void NavBrush(string key, Color color) => Nav.Resources[key] = new SolidColorBrush(color);
+        foreach (var key in new[]
+        {
+            "NavigationViewItemForeground",
+            "NavigationViewItemForegroundPointerOver",
+            "NavigationViewItemForegroundPressed",
+            "NavigationViewItemForegroundSelected",
+            "NavigationViewItemForegroundSelectedPointerOver",
+            "NavigationViewItemForegroundSelectedPressed",
+        })
+            NavBrush(key, ink);
+        NavBrush("NavigationViewItemBackground", Color.FromArgb(0, 0, 0, 0));
+        NavBrush("NavigationViewItemBackgroundPointerOver", hoverFill);
+        NavBrush("NavigationViewItemBackgroundPressed", pressedFill);
+        NavBrush("NavigationViewItemBackgroundSelected", pill);
+        NavBrush("NavigationViewItemBackgroundSelectedPointerOver", selectedHover);
+        NavBrush("NavigationViewItemBackgroundSelectedPressed", selectedHover);
+        PaintControl(TermPicker, fill, hover, fg, stroke, "ComboBox");
+        TermPicker.Background = fill;
+        TermPicker.Foreground = fg;
+        TermPicker.BorderBrush = stroke;
+        TermPicker.Resources["ComboBoxPlaceHolderForeground"] = muted;
+        TermPicker.Resources["ComboBoxPlaceHolderForegroundPointerOver"] = muted;
+        TermPicker.Resources["ComboBoxDropDownGlyphForeground"] = fg;
+        TermPicker.Resources["ComboBoxForegroundFocused"] = fg;
+        PaintControl(ThemeButton, fill, hover, fg, stroke, "Button");
+        ThemeButton.Background = fill;
+        ThemeButton.Foreground = fg;
+        ThemeButton.BorderBrush = stroke;
+        PaintCaptionButtons(dark);
+    }
+
+    private static void PaintControl(FrameworkElement element, Brush fill, Brush hover, Brush foreground, Brush stroke, string prefix)
+    {
+        element.Resources[prefix + "Background"] = fill;
+        element.Resources[prefix + "BackgroundPointerOver"] = hover;
+        element.Resources[prefix + "BackgroundPressed"] = hover;
+        element.Resources[prefix + "Foreground"] = foreground;
+        element.Resources[prefix + "ForegroundPointerOver"] = foreground;
+        element.Resources[prefix + "ForegroundPressed"] = foreground;
+        element.Resources[prefix + "BorderBrush"] = stroke;
+        element.Resources[prefix + "BorderBrushPointerOver"] = stroke;
+        element.Resources[prefix + "BorderBrushPressed"] = stroke;
+    }
+
+    private void PaintCaptionButtons(bool dark)
+    {
+        var fg = dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 27, 27, 27);
+        var inactive = dark ? Color.FromArgb(255, 160, 160, 160) : Color.FromArgb(255, 110, 110, 110);
+        var hover = dark ? Color.FromArgb(32, 255, 255, 255) : Color.FromArgb(24, 0, 0, 0);
+        var pressed = dark ? Color.FromArgb(48, 255, 255, 255) : Color.FromArgb(36, 0, 0, 0);
+        var clear = Color.FromArgb(0, 0, 0, 0);
+        var bar = AppWindow.TitleBar;
+        bar.BackgroundColor = clear;
+        bar.InactiveBackgroundColor = clear;
+        bar.ButtonBackgroundColor = clear;
+        bar.ButtonInactiveBackgroundColor = clear;
+        bar.ButtonForegroundColor = fg;
+        bar.ButtonInactiveForegroundColor = inactive;
+        bar.ButtonHoverBackgroundColor = hover;
+        bar.ButtonHoverForegroundColor = fg;
+        bar.ButtonPressedBackgroundColor = pressed;
+        bar.ButtonPressedForegroundColor = fg;
+    }
+
+    private void SyncChromeMetrics()
+    {
+        if (_syncingChrome) return;
+        var width = Root.ActualWidth;
+        if (width < 1) return;
+        _syncingChrome = true;
+        try
+        {
+            var inset = width >= 1008 ? 36.0 : 24.0;
+            Chrome.UsePageWidth(width);
+            Disclaimer.Margin = new Thickness(inset, 12, inset, 16);
+            TitleBar.Padding = new Thickness(inset, 0, 0, 0);
+            var compact = width < 1008;
+            if (compact != _compact || Nav.PaneDisplayMode == NavigationViewPaneDisplayMode.Auto)
+            {
+                _compact = compact;
+                Nav.PaneDisplayMode = compact ? NavigationViewPaneDisplayMode.LeftCompact : NavigationViewPaneDisplayMode.Left;
+                Nav.IsPaneOpen = !compact;
+            }
+            if (ScreenshotSweep.Enabled || Math.Abs(inset - _appliedInset) < 0.1) return;
+            _appliedInset = inset;
+            if (_area.Length > 0) Show(_area);
+        }
+        finally
+        {
+            _syncingChrome = false;
+        }
     }
 
     private void WireKeys()
@@ -407,9 +580,13 @@ public sealed partial class MainWindow : Window
 
     public void ResizeForCapture(int width, int height)
     {
+        _captureWidth = width;
+        Chrome.UsePageWidth(width);
         AppWindow.Move(new Windows.Graphics.PointInt32(32, 32));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(width, height));
         SyncCaptionSpacer();
+        SyncChromeMetrics();
+        Chrome.UsePageWidth(width);
     }
 
     public async Task RunScreenshotSweepAsync()
@@ -430,13 +607,181 @@ public sealed partial class MainWindow : Window
 
     public void PrepareCapture(string tag)
     {
-        Select(tag);
-        if (tag == "search" && Host.Children.FirstOrDefault() is SearchPage search)
-            search.Run("CS");
+        if (_captureWidth > 0) Chrome.UsePageWidth(_captureWidth);
+        HideCaptureOverlay();
+        switch (tag)
+        {
+            case "course":
+                Select("search");
+                if (Host.Children.FirstOrDefault() is SearchPage courseSearch)
+                    courseSearch.Run(CourseQuery());
+                break;
+            case "generated":
+                Select("schedules");
+                if (Host.Children.FirstOrDefault() is SchedulesPage schedules)
+                    schedules.GenerateForCapture();
+                break;
+            case "survey":
+                Select("schedules");
+                ShowSurveyOverlay();
+                break;
+            case "watch-items":
+                SeedWatchItems();
+                Select("watch");
+                break;
+            case "about":
+                Select("settings");
+                ShowAboutOverlay();
+                break;
+            case "dialog":
+                Select("search");
+                ShowDialogOverlay();
+                break;
+            default:
+                Select(tag);
+                if (tag == "search" && Host.Children.FirstOrDefault() is SearchPage search)
+                    search.Run("CS");
+                break;
+        }
+        ClearCaptureFocus();
     }
 
-    public void ApplyCaptureTheme(ElementTheme theme) =>
-        ((FrameworkElement)Content).RequestedTheme = theme;
+    public void ApplyCaptureTheme(ElementTheme theme) => ApplyTheme(theme);
+
+    public void HideCaptureOverlay()
+    {
+        CaptureLayer.Children.Clear();
+        CaptureLayer.Visibility = Visibility.Collapsed;
+    }
+
+    private void ClearCaptureFocus()
+    {
+        try
+        {
+            Nav.UseSystemFocusVisuals = false;
+            TermPicker.UseSystemFocusVisuals = false;
+            ThemeButton.UseSystemFocusVisuals = false;
+            foreach (var item in Nav.MenuItems.OfType<Control>())
+                item.UseSystemFocusVisuals = false;
+            if (Nav.SettingsItem is Control settings)
+                settings.UseSystemFocusVisuals = false;
+            if (Host.Children.FirstOrDefault() is Control page)
+            {
+                page.UseSystemFocusVisuals = false;
+                page.Focus(FocusState.Pointer);
+            }
+        }
+        catch (Exception)
+        {
+            // A missing focus target should not fail the sweep.
+        }
+    }
+
+    private static string CourseQuery()
+    {
+        var index = App.Session.Index;
+        if (index is null) return "CS";
+        var exact = index.Courses.FirstOrDefault(course => course.Subject == "CS" && course.Number == "1200");
+        if (exact is not null) return exact.Code;
+        var cs = index.Courses.FirstOrDefault(course => course.Subject == "CS" && index.Sections(course.Key).Count > 0);
+        return cs?.Code ?? "CS";
+    }
+
+    private void SeedWatchItems()
+    {
+        var index = App.Session.Index;
+        if (index is null) return;
+        var term = index.Term.Code;
+        foreach (var section in index.SectionsByCrn.Values.Where(section => section.Crn.Length > 0).Take(4))
+        {
+            var title = index.Course(section.CourseKey)?.Title ?? section.Title;
+            App.Session.Store.Watch(section, title, term);
+        }
+    }
+
+    private void ShowSurveyOverlay()
+    {
+        var campuses = App.Session.Index?.CampusNames.ToList() ?? [];
+        var survey = new PreferencesSurvey(new SchedulePreferences(), campuses);
+        ShowCaptureCard(new ScrollViewer
+        {
+            Content = survey,
+            MaxHeight = 620,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        });
+    }
+
+    private void ShowAboutOverlay()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(Chrome.Heading("About Term Organize"));
+        panel.Children.Add(Chrome.Body(LegalText.UnofficialNotice));
+        panel.Children.Add(Chrome.Body(LegalText.SearchNeuSummary));
+        panel.Children.Add(Chrome.Body(LegalText.PrivacyNotice));
+        panel.Children.Add(Chrome.Section("License"));
+        var license = LegalText.LoadLicenseText() ?? LegalText.LicenseNotice;
+        if (license.Length > 1800) license = license[..1800] + "…";
+        panel.Children.Add(new TextBlock
+        {
+            Text = license,
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 12,
+            IsTextSelectionEnabled = true,
+        });
+        ShowCaptureCard(new ScrollViewer
+        {
+            Content = panel,
+            MaxHeight = 620,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        });
+    }
+
+    private void ShowDialogOverlay()
+    {
+        var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
+        panel.Children.Add(Chrome.Heading("Welcome to Term Organize"));
+        panel.Children.Add(Chrome.Body("Northeastern courses, on your PC."));
+        panel.Children.Add(Chrome.Body("Search every class, build a conflict-free schedule, import a degree audit, and get a toast when a seat opens."));
+        panel.Children.Add(Chrome.Body("Everything stays on your PC. No accounts, no analytics, no tracking."));
+        panel.Children.Add(Chrome.Body(LegalText.UnofficialNotice));
+        var button = new Button { Content = "Continue", HorizontalAlignment = HorizontalAlignment.Right };
+        if (Chrome.StyleOf("AccentButtonStyle") is Style accent) button.Style = accent;
+        panel.Children.Add(button);
+        ShowCaptureCard(panel);
+    }
+
+    private void ShowCaptureCard(UIElement content)
+    {
+        var theme = Root.ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        var smoke = new Grid
+        {
+            RequestedTheme = theme,
+            Background = new SolidColorBrush(Color.FromArgb(theme == ElementTheme.Dark ? (byte)160 : (byte)96, 0, 0, 0)),
+        };
+        var frame = new Border
+        {
+            RequestedTheme = theme,
+            MaxWidth = 560,
+            MaxHeight = 680,
+            Padding = new Thickness(24),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = Chrome.ThemedBrush(theme, "SolidBackgroundFillColorBaseBrush",
+                theme == ElementTheme.Dark ? Color.FromArgb(255, 32, 32, 32) : Color.FromArgb(255, 243, 243, 243)),
+            BorderBrush = Chrome.ThemedBrush(theme, "CardStrokeColorDefaultBrush",
+                theme == ElementTheme.Dark ? Color.FromArgb(255, 80, 80, 80) : Color.FromArgb(255, 220, 220, 220)),
+            Child = content,
+        };
+        smoke.Children.Add(frame);
+        CaptureLayer.Children.Clear();
+        CaptureLayer.Children.Add(smoke);
+        CaptureLayer.Visibility = Visibility.Visible;
+    }
 
     public void FinishSweep()
     {

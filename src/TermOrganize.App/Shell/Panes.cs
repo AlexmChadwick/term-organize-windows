@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
+using Windows.UI;
 
 namespace TermOrganize;
 
@@ -13,34 +14,53 @@ namespace TermOrganize;
 internal sealed class PaneSplit : Grid
 {
     private readonly ColumnDefinition _left;
+    private readonly ColumnDefinition _right;
+    private readonly Thumb _thumb;
     private readonly double _preferred;
     private bool _fitted;
+    private bool _thumbHot;
 
     public PaneSplit(FrameworkElement left, FrameworkElement right, double start = 420)
     {
         _preferred = start;
         _left = new ColumnDefinition { Width = new GridLength(start), MinWidth = 160, MaxWidth = 720 };
+        _right = new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 240 };
         ColumnDefinitions.Add(_left);
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 0 });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+        ColumnDefinitions.Add(_right);
         Children.Add(left);
-        var thumb = new Thumb
+        _thumb = new Thumb
         {
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(48, 128, 128, 128)),
+            Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
         };
-        thumb.DragDelta += (_, args) =>
+        _thumb.DragDelta += (_, args) =>
         {
             var next = Math.Clamp(_left.ActualWidth + args.HorizontalChange, _left.MinWidth, _left.MaxWidth);
             _left.Width = new GridLength(next);
         };
-        Grid.SetColumn(thumb, 1);
-        Children.Add(thumb);
+        _thumb.PointerEntered += (_, _) => PaintThumb(true);
+        _thumb.PointerExited += (_, _) => PaintThumb(false);
+        _thumb.ActualThemeChanged += (_, _) => PaintThumb(_thumbHot);
+        Grid.SetColumn(_thumb, 1);
+        Children.Add(_thumb);
         Grid.SetColumn(right, 2);
         Children.Add(right);
         Loaded += (_, _) => Fit();
         SizeChanged += (_, _) => Fit();
+    }
+
+    private void PaintThumb(bool hot)
+    {
+        _thumbHot = hot;
+        if (!hot)
+        {
+            _thumb.Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+            return;
+        }
+        var theme = _thumb.ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        _thumb.Background = Chrome.ThemedBrush(theme, "DividerStrokeColorDefaultBrush", Color.FromArgb(80, 128, 128, 128));
     }
 
     /// <summary>
@@ -50,8 +70,12 @@ internal sealed class PaneSplit : Grid
     private void Fit()
     {
         if (ActualWidth <= 0) return;
-        var rightFloor = Math.Min(220, Math.Max(120, ActualWidth * 0.28));
-        var maxLeft = Math.Max(120, ActualWidth - 8 - rightFloor);
+        var rightFloor = Math.Min(320, Math.Max(240, ActualWidth * 0.38));
+        var available = Math.Max(0, ActualWidth - 12);
+        if (rightFloor > available * 0.55)
+            rightFloor = Math.Max(160, available * 0.45);
+        _right.MinWidth = rightFloor;
+        var maxLeft = Math.Max(120, ActualWidth - 12 - rightFloor);
         _left.MaxWidth = Math.Min(720, maxLeft);
         _left.MinWidth = Math.Min(160, _left.MaxWidth);
         var current = _left.Width.IsAbsolute ? _left.Width.Value : _preferred;

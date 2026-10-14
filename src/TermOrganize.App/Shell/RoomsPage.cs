@@ -213,14 +213,21 @@ public sealed class RoomsPage : UserControl
         var track = new RoomTrack(RoomAvailability.Bookings(entry.Room, moment.Weekday, moment.Date), moment.Minutes);
         Grid.SetColumn(track, 1);
         grid.Children.Add(track);
+        var selectedRow = entry.Room.Id == _roomId;
         var card = new Border
         {
             Child = grid,
-            Background = entry.Room.Id == _roomId
-                ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"]
-                : (Brush)Application.Current.Resources["SubtleFillColorTransparentBrush"],
             CornerRadius = new CornerRadius(4),
         };
+        void PaintRow()
+        {
+            var theme = card.ActualTheme == ElementTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+            card.Background = selectedRow
+                ? Chrome.ThemedBrush(theme, "SubtleFillColorSecondaryBrush", Color.FromArgb(24, 128, 128, 128))
+                : Chrome.ThemedBrush(theme, "SubtleFillColorTransparentBrush", Color.FromArgb(0, 0, 0, 0));
+        }
+        card.Loaded += (_, _) => PaintRow();
+        card.ActualThemeChanged += (_, _) => PaintRow();
         var room = entry.Room;
         card.Tapped += (_, _) =>
         {

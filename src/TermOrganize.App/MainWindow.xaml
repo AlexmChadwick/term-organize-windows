@@ -4,7 +4,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Term Organize">
-    <Grid>
+    <!-- Solid fill is the Mica fallback. RenderTargetBitmap does not composite Mica, so a transparent root captures as black. -->
+    <Grid x:Name="Root" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="Auto" />
@@ -12,19 +13,23 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="TitleBar" Grid.Row="0" Padding="16,0,0,0" ColumnSpacing="8">
+        <Grid x:Name="TitleBar" Grid.Row="0" Padding="24,0,0,0" ColumnSpacing="8" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="CaptionSpacer" Width="138" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="Term Organize" VerticalAlignment="Center" FontSize="12" FontWeight="Normal" />
-            <ComboBox x:Name="TermPicker" Grid.Column="1" MinWidth="120" MaxWidth="320" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" PlaceholderText="Term" SelectionChanged="TermChanged" />
-            <Button Grid.Column="2" Content="Theme" Click="ToggleTheme" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <Grid x:Name="DragRegion" Background="Transparent" MinWidth="132">
+                <TextBlock Text="Term Organize" VerticalAlignment="Center" FontSize="12" />
+            </Grid>
+            <ComboBox x:Name="TermPicker" Grid.Column="1" MinWidth="160" MaxWidth="320" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" PlaceholderText="Term" SelectionChanged="TermChanged" />
+            <Button x:Name="ThemeButton" Grid.Column="2" Click="ToggleTheme" VerticalAlignment="Center" Margin="0,0,8,0" AutomationProperties.Name="Theme">
+                <FontIcon Glyph="&#xE706;" FontSize="16" />
+            </Button>
         </Grid>
 
-        <MenuBar Grid.Row="1" VerticalAlignment="Top">
+        <MenuBar x:Name="Commands" Grid.Row="1" VerticalAlignment="Top" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
             <MenuBarItem Title="File">
                 <MenuFlyoutItem Text="New Schedule" Click="MenuNewSchedule" />
                 <MenuFlyoutItem Text="New Degree Plan" Click="MenuNewDegree" />
@@ -55,21 +60,100 @@
             Grid.Row="2"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="True"
+            IsPaneToggleButtonVisible="True"
             PaneDisplayMode="Auto"
+            CompactModeThresholdWidth="641"
+            ExpandedModeThresholdWidth="1008"
+            CompactPaneLength="48"
+            OpenPaneLength="280"
+            Background="Transparent"
             SelectionChanged="NavChanged">
+            <NavigationView.Resources>
+                <ResourceDictionary>
+                    <ResourceDictionary.ThemeDictionaries>
+                        <ResourceDictionary x:Key="Light">
+                            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#FFF3F3F3" />
+                            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#FFF3F3F3" />
+                            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+                            <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#E4000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#E4000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#E4000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#E4000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPointerOver" Color="#E4000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPressed" Color="#E4000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackground" Color="Transparent" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#0F000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#18000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#1A000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#26000000" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#33000000" />
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="Dark">
+                            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#FF202020" />
+                            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#FF202020" />
+                            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+                            <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#FFFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#FFFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundPressed" Color="#FFFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#FFFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPointerOver" Color="#FFFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPressed" Color="#FFFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackground" Color="Transparent" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#14FFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#1FFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#2AFFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#33FFFFFF" />
+                            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#3DFFFFFF" />
+                        </ResourceDictionary>
+                    </ResourceDictionary.ThemeDictionaries>
+                </ResourceDictionary>
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Search" Tag="search" />
-                <NavigationViewItem Content="Subjects" Tag="subjects" />
-                <NavigationViewItem Content="Saved" Tag="saved" />
-                <NavigationViewItem Content="Professors" Tag="professors" />
-                <NavigationViewItem Content="Free Rooms" Tag="rooms" />
-                <NavigationViewItem Content="Schedules" Tag="schedules" />
-                <NavigationViewItem Content="Degree Plans" Tag="degree" />
-                <NavigationViewItem Content="Watchlist" Tag="watch" />
+                <NavigationViewItem Content="Search" Tag="search">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE721;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Subjects" Tag="subjects">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8F1;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Saved" Tag="saved">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE734;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Professors" Tag="professors">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE77B;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Free Rooms" Tag="rooms">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE707;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Schedules" Tag="schedules">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE787;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Degree Plans" Tag="degree">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7BE;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Watchlist" Tag="watch">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE890;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
             <Grid x:Name="Host" />
         </NavigationView>
 
-        <TextBlock x:Name="Disclaimer" Grid.Row="3" Margin="16,8" TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
+        <TextBlock x:Name="Disclaimer" Grid.Row="3" Margin="24,12,24,16" TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
+        <Grid x:Name="CaptureLayer" Grid.RowSpan="4" Visibility="Collapsed" />
     </Grid>
 </Window>

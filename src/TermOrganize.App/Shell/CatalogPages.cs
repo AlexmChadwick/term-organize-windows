@@ -13,7 +13,7 @@ public sealed class SubjectsPage : UserControl
     {
         var list = new ListView();
         var detail = new StackPanel { Spacing = 6 };
-        var split = Split(list, new ScrollViewer { Content = detail, Padding = new Thickness(16, 0, 0, 0) });
+        var split = Split(list, Chrome.Details(detail));
         Content = split;
         Padding = Chrome.PagePadding;
         if (session.Index is null)

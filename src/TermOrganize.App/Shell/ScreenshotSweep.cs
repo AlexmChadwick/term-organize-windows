@@ -1,6 +1,9 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -100,7 +103,7 @@ internal static class ScreenshotSweep
     public static void WriteError(Exception? ex)
     {
         if (!Enabled) return;
-        var text = ex?.ToString() ?? "Unknown exception";
+        var text = Describe(ex);
         Log(text);
         try
         {
@@ -113,6 +116,75 @@ internal static class ScreenshotSweep
         catch (Exception)
         {
             // The workflow still has the process exit code and the event log.
+        }
+    }
+
+    public static string Describe(Exception? ex)
+    {
+        if (ex is null) return "Unknown exception";
+        var builder = new StringBuilder();
+        var seen = new HashSet<Exception>();
+        Walk(ex, 0);
+        return builder.ToString();
+
+        void Walk(Exception current, int depth)
+        {
+            if (depth > 8 || !seen.Add(current)) return;
+            if (builder.Length > 0) builder.AppendLine("---- inner ----");
+            builder.AppendLine(current.GetType().FullName);
+            builder.Append("Message: ").AppendLine(current.Message);
+            builder.Append("HResult: 0x").AppendLine(current.HResult.ToString("X8"));
+            AppendXamlPosition(builder, current);
+            try
+            {
+                foreach (var prop in current.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+                {
+                    if (prop.GetIndexParameters().Length > 0) continue;
+                    if (prop.Name is "Message" or "InnerException" or "StackTrace" or "Data" or "TargetSite" or "HelpLink" or "Source" or "HResult")
+                        continue;
+                    object? value;
+                    try { value = prop.GetValue(current); }
+                    catch (Exception) { continue; }
+                    if (value is null or "") continue;
+                    builder.Append(prop.Name).Append(": ").AppendLine(value.ToString());
+                }
+            }
+            catch (Exception)
+            {
+                // Some COM exception projections throw when reflecting.
+            }
+            if (current.Data.Count > 0)
+            {
+                foreach (var key in current.Data.Keys)
+                    builder.Append("Data[").Append(key).Append("]: ").AppendLine(current.Data[key]?.ToString());
+            }
+            if (!string.IsNullOrWhiteSpace(current.StackTrace)) builder.AppendLine(current.StackTrace);
+            if (current is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions) Walk(inner, depth + 1);
+            }
+            else if (current.InnerException is not null)
+            {
+                Walk(current.InnerException, depth + 1);
+            }
+        }
+    }
+
+    private static void AppendXamlPosition(StringBuilder builder, Exception ex)
+    {
+        var message = ex.Message ?? "";
+        var match = Regex.Match(message, @"Line:?\s*(\d+).{0,40}?Position:?\s*(\d+)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (match.Success)
+            builder.Append("XAML line ").Append(match.Groups[1].Value).Append(", position ").Append(match.Groups[2].Value).AppendLine();
+        foreach (var name in new[] { "LineNumber", "LinePosition", "Line", "Position", "BaseUri" })
+        {
+            var prop = ex.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
+            if (prop?.GetIndexParameters().Length > 0) continue;
+            object? value = null;
+            try { value = prop?.GetValue(ex); }
+            catch (Exception) { continue; }
+            if (value is null) continue;
+            builder.Append("XAML ").Append(name).Append(": ").AppendLine(value.ToString());
         }
     }
 

@@ -48,11 +48,23 @@ internal static class SeatCheckHost
     }
 }
 
-/// <summary>Unpackaged runs need the Windows App SDK bootstrap before toasts or WinUI.</summary>
+/// <summary>Framework-dependent unpackaged runs need the Windows App SDK bootstrap before toasts or WinUI.</summary>
 internal static class UnpackagedBootstrap
 {
     public static void Try()
     {
+        // Self-contained builds already load Microsoft.WindowsAppRuntime.dll from the exe directory.
+        // Bootstrap.Initialize looks up a framework package and throws
+        // "Package dependency criteria could not be resolved" when that package is not installed.
+#if MICROSOFT_WINDOWSAPPSDK_SELFCONTAINED
+        ScreenshotSweep.Log("bootstrap skipped (self-contained)");
+        return;
+#else
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, "Microsoft.WindowsAppRuntime.dll")))
+        {
+            ScreenshotSweep.Log("bootstrap skipped (self-contained runtime)");
+            return;
+        }
         try
         {
             Microsoft.Windows.ApplicationModel.DynamicDependency.Bootstrap.Initialize(0x00010008);
@@ -60,9 +72,9 @@ internal static class UnpackagedBootstrap
         catch (Exception ex)
         {
             // A packaged app already has the runtime and throws here.
-            // A self-contained unpackaged app loads it from the exe directory instead.
-            ScreenshotSweep.Log("bootstrap: " + ex.GetType().Name + ": " + ex.Message);
+            ScreenshotSweep.Log("bootstrap: " + ScreenshotSweep.Describe(ex));
         }
+#endif
     }
 }
 

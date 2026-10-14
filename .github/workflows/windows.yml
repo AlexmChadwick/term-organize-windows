@@ -59,10 +59,11 @@ jobs:
           -p:RuntimeIdentifier=win-x64
           -p:SelfContained=true
           -p:WindowsAppSDKSelfContained=true
+          -p:WindowsAppSdkBootstrapInitialize=false
           -p:WindowsPackageType=None
           -p:GenerateAppxPackageOnBuild=false
           -p:AppxPackageSigningEnabled=false
-          -p:EnableMsixTooling=false
+          -p:EnableMsixTooling=true
           -o artifacts/unpackaged
 
       - name: Zip the unpackaged build
@@ -113,12 +114,18 @@ jobs:
           }
 
           $runtime = Get-ChildItem -Path $unpackaged -Recurse -Filter Microsoft.WindowsAppRuntime.dll -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $runtime) {
+          $pri = Get-ChildItem -Path $unpackaged -Recurse -Filter *.pri -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq 'resources.pri' } |
+            Select-Object -First 1
+          if (-not $runtime -or -not $pri) {
             Write-Host "--- unpackaged directory ---"
             Get-ChildItem $unpackaged -Force | Format-Table Name, Length -AutoSize | Out-String | Write-Host
-            "Microsoft.WindowsAppRuntime.dll is missing. The unpackaged publish must set WindowsAppSDKSelfContained=true." | Set-Content -Path (Join-Path $out "error.txt")
+            $missing = @()
+            if (-not $runtime) { $missing += "Microsoft.WindowsAppRuntime.dll (set WindowsAppSDKSelfContained=true and WindowsAppSdkBootstrapInitialize=false)" }
+            if (-not $pri) { $missing += "resources.pri (EnableMsixTooling must stay true so MainWindow.xaml is packaged)" }
+            ($missing -join [Environment]::NewLine) | Set-Content -Path (Join-Path $out "error.txt")
             Show-SweepDiagnostics
-            throw "Unpackaged publish is missing Microsoft.WindowsAppRuntime.dll."
+            throw "Unpackaged publish is missing: $($missing -join '; ')"
           }
 
           $exe = Join-Path $unpackaged "TermOrganize.App.exe"

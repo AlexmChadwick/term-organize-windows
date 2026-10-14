@@ -49,10 +49,16 @@
   </PropertyGroup>
 
   <!-- windows-latest does not have the Windows App SDK runtime installed.
-       An unpackaged publish has to carry it. MSIX builds keep the framework package. -->
+       An unpackaged publish carries it, and must not call the framework bootstrap.
+       MSIX tooling stays on so resources.pri (MainWindow.xaml) is in the output.
+       MSIX builds keep the framework package. -->
   <PropertyGroup Condition="'$(WindowsPackageType)' == 'None' and $([MSBuild]::IsOSPlatform('Windows')) and '$(RuntimeIdentifier)' != ''">
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
     <SelfContained>true</SelfContained>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsWindowsBuild)' != 'true'">

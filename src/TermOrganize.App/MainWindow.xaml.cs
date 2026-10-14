@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using H.NotifyIcon;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,10 +24,22 @@ public sealed partial class MainWindow : Window
     private CatalogIndex? _shownIndex;
     private string? _shownError;
     private readonly string _themePath = Path.Combine(Path.GetDirectoryName(UserDataStore.DefaultPath())!, "theme.txt");
+    private readonly TextBlock _upNext = new() { Text = "No class on the calendar yet.", TextWrapping = TextWrapping.Wrap };
+    private TaskbarIcon? _tray;
 
     public MainWindow()
     {
         InitializeComponent();
+        ScreenshotSweep.Log("window xaml loaded");
+        try
+        {
+            _tray = BuildTray();
+        }
+        catch (Exception ex)
+        {
+            // The tray is not part of the window parse. A failure here must not look like a XAML load error.
+            ScreenshotSweep.Log("tray: " + ScreenshotSweep.Describe(ex));
+        }
         try
         {
             SystemBackdrop = new MicaBackdrop();
@@ -123,7 +136,7 @@ public sealed partial class MainWindow : Window
         Show(tag);
     }
 
-    public void SetUpNext(string text) => UpNextText.Text = text;
+    public void SetUpNext(string text) => _upNext.Text = text;
 
     public void SetStatus(string text) =>
         Disclaimer.Text = string.IsNullOrWhiteSpace(text)
@@ -404,7 +417,7 @@ public sealed partial class MainWindow : Window
         try
         {
             await ScreenshotSweep.CaptureAsync(this);
-            try { FinishSweep(); } catch (Exception ex) { ScreenshotSweep.Log("finish: " + ex); }
+            try { FinishSweep(); } catch (Exception ex) { ScreenshotSweep.Log("finish: " + ScreenshotSweep.Describe(ex)); }
             Environment.Exit(0);
         }
         catch (Exception ex)
@@ -428,7 +441,8 @@ public sealed partial class MainWindow : Window
     public void FinishSweep()
     {
         _exiting = true;
-        Tray.Dispose();
+        _tray?.Dispose();
+        _tray = null;
     }
 
     private void ScheduleWelcome()
@@ -538,7 +552,8 @@ public sealed partial class MainWindow : Window
     private void ExitApp(object sender, RoutedEventArgs e)
     {
         _exiting = true;
-        Tray.Dispose();
+        _tray?.Dispose();
+        _tray = null;
         Close();
     }
 
@@ -546,6 +561,66 @@ public sealed partial class MainWindow : Window
     {
         var session = App.Session;
         var line = UpNextLines.Current(session.Store, session.Index, DateTime.Now);
-        UpNextText.Text = line == "Nothing else today." ? "Nothing else today. The tray flyout is Up Next." : line;
+        _upNext.Text = line == "Nothing else today." ? "Nothing else today. The tray flyout is Up Next." : line;
+    }
+
+    private TaskbarIcon BuildTray()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock { Text = "Up Next", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(_upNext);
+        var open = new Button { Content = "Open Term Organize", HorizontalAlignment = HorizontalAlignment.Left };
+        open.Click += ShowWindow;
+        panel.Children.Add(open);
+        var popup = new Border
+        {
+            Padding = new Thickness(16),
+            Width = 280,
+            Background = ThemeBrush("SolidBackgroundFillColorBaseBrush", Windows.UI.Color.FromArgb(255, 255, 255, 255)),
+            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush", Windows.UI.Color.FromArgb(255, 200, 200, 200)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = panel,
+        };
+        var menu = new MenuFlyout();
+        menu.Items.Add(Item("Show Term Organize", ShowWindow));
+        menu.Items.Add(Item("Check seats now", CheckSeats));
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(Item("Exit", ExitApp));
+        var tray = new TaskbarIcon
+        {
+            ToolTipText = "Term Organize",
+            IconSource = new GeneratedIconSource
+            {
+                Text = "T",
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0xC8, 0x10, 0x2E)),
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+            },
+            TrayPopup = popup,
+            ContextFlyout = menu,
+        };
+        return tray;
+
+        static MenuFlyoutItem Item(string text, RoutedEventHandler click)
+        {
+            var item = new MenuFlyoutItem { Text = text };
+            item.Click += click;
+            return item;
+        }
+    }
+
+    private static Brush ThemeBrush(string key, Windows.UI.Color fallback)
+    {
+        try
+        {
+            if (Application.Current.Resources.TryGetValue(key, out var value) && value is Brush brush)
+                return brush;
+        }
+        catch (Exception)
+        {
+            // A missing theme brush should not take down the tray.
+        }
+        return new SolidColorBrush(fallback);
     }
 }

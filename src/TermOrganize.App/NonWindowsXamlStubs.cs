@@ -6,7 +6,6 @@
 // InitializeComponent or the x:Name fields here. Windows builds exclude this
 // file and use the generated partials instead.
 
-using H.NotifyIcon;
 using Microsoft.UI.Xaml.Controls;
 
 namespace TermOrganize;
@@ -26,8 +25,6 @@ public sealed partial class MainWindow
     internal NavigationView Nav = null!;
     internal Grid Host = null!;
     internal TextBlock Disclaimer = null!;
-    internal TaskbarIcon Tray = null!;
-    internal TextBlock UpNextText = null!;
 
     public void InitializeComponent()
     {

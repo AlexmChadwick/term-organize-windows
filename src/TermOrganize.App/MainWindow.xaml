@@ -3,7 +3,6 @@
     x:Class="TermOrganize.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:tb="using:H.NotifyIcon"
     Title="Term Organize">
     <Grid>
         <Grid.RowDefinitions>
@@ -20,7 +19,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="CaptionSpacer" Width="138" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="Term Organize" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" />
+            <TextBlock Text="Term Organize" VerticalAlignment="Center" FontSize="12" FontWeight="Normal" />
             <ComboBox x:Name="TermPicker" Grid.Column="1" MinWidth="120" MaxWidth="320" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" PlaceholderText="Term" SelectionChanged="TermChanged" />
             <Button Grid.Column="2" Content="Theme" Click="ToggleTheme" VerticalAlignment="Center" Margin="0,0,8,0" />
         </Grid>
@@ -72,28 +71,5 @@
         </NavigationView>
 
         <TextBlock x:Name="Disclaimer" Grid.Row="3" Margin="16,8" TextWrapping="Wrap" Opacity="0.75" FontSize="12" />
-
-        <tb:TaskbarIcon x:Name="Tray" ToolTipText="Term Organize">
-            <tb:TaskbarIcon.IconSource>
-                <tb:GeneratedIconSource Text="T" Foreground="White" Background="#C8102E" FontWeight="Bold" />
-            </tb:TaskbarIcon.IconSource>
-            <tb:TaskbarIcon.TrayPopup>
-                <Border Padding="16" Width="280" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Up Next" FontWeight="SemiBold" />
-                        <TextBlock x:Name="UpNextText" Text="No class on the calendar yet." TextWrapping="Wrap" />
-                        <Button Content="Open Term Organize" Click="ShowWindow" HorizontalAlignment="Left" />
-                    </StackPanel>
-                </Border>
-            </tb:TaskbarIcon.TrayPopup>
-            <tb:TaskbarIcon.ContextFlyout>
-                <MenuFlyout>
-                    <MenuFlyoutItem Text="Show Term Organize" Click="ShowWindow" />
-                    <MenuFlyoutItem Text="Check seats now" Click="CheckSeats" />
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Exit" Click="ExitApp" />
-                </MenuFlyout>
-            </tb:TaskbarIcon.ContextFlyout>
-        </tb:TaskbarIcon>
     </Grid>
 </Window>

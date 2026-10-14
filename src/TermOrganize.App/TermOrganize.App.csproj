@@ -29,8 +29,20 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <StartupObject>TermOrganize.Program</StartupObject>
     <PackageCertificateKeyFile Condition="'$(PackageCertificateKeyFile)' == '' and Exists('TermOrganize.pfx')">TermOrganize.pfx</PackageCertificateKeyFile>
-    <DefaultItemExcludes>$(DefaultItemExcludes);NonWindowsXamlStubs.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);NonWindowsXamlStubs.cs;obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <!-- Generated .g.i.cs files are added again by the markup compiler from the
+       active intermediate directory. Anything already sitting under this
+       project's obj or bin, including the other package type's output, is not
+       source. -->
+  <ItemGroup>
+    <Compile Remove="obj/**;bin/**" />
+    <Page Remove="obj/**;bin/**" />
+    <ApplicationDefinition Remove="obj/**;bin/**" />
+    <None Remove="obj/**;bin/**" />
+    <PRIResource Remove="obj/**;bin/**" />
+  </ItemGroup>
 
   <!-- The markup compiler and MSIX tools are Windows executables. On Linux the
        same C# still compiles against the Windows App SDK reference assemblies.
@@ -117,6 +129,29 @@
   </ItemGroup>
 
   <Target Name="BuildOnNonWindows" Condition="'$(IsWindowsBuild)' != 'true'" />
+
+  <Target Name="RejectProjectOutputSources" BeforeTargets="CoreCompile" Condition="'$(IsWindowsBuild)' == 'true'">
+    <PropertyGroup>
+      <_ProjectObj>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'obj'))</_ProjectObj>
+      <_ProjectBin>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'bin'))</_ProjectBin>
+      <!-- A rooted intermediate path replaces the project directory. A relative one is joined to it. -->
+      <_ActiveIntermediate>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)'))</_ActiveIntermediate>
+      <_ProjectObj>$([System.String]::Copy('$(_ProjectObj)').ToLowerInvariant())</_ProjectObj>
+      <_ProjectBin>$([System.String]::Copy('$(_ProjectBin)').ToLowerInvariant())</_ProjectBin>
+      <_ActiveIntermediate>$([System.String]::Copy('$(_ActiveIntermediate)').ToLowerInvariant())</_ActiveIntermediate>
+    </PropertyGroup>
+    <!-- AssemblyInfo and GlobalUsings live in the active intermediate directory and
+         are supposed to be compiled. XAML .g.i.cs from the other package type's
+         obj tree is not. -->
+    <ItemGroup>
+      <_StrayGenerated Include="@(Compile)"
+                       Condition="$([System.String]::Copy('%(Filename)').EndsWith('.g.i')) and !$([System.String]::Copy('%(FullPath)').ToLowerInvariant().StartsWith('$(_ActiveIntermediate)')) and ($([System.String]::Copy('%(FullPath)').ToLowerInvariant().StartsWith('$(_ProjectObj)')) or $([System.String]::Copy('%(FullPath)').ToLowerInvariant().StartsWith('$(_ProjectBin)')))" />
+      <_StrayGenerated Include="@(Page);@(ApplicationDefinition)"
+                       Condition="!$([System.String]::Copy('%(FullPath)').ToLowerInvariant().StartsWith('$(_ActiveIntermediate)')) and ($([System.String]::Copy('%(FullPath)').ToLowerInvariant().StartsWith('$(_ProjectObj)')) or $([System.String]::Copy('%(FullPath)').ToLowerInvariant().StartsWith('$(_ProjectBin)')))" />
+    </ItemGroup>
+    <Error Condition="'@(_StrayGenerated)' != ''"
+           Text="Generated XAML sources from another output directory are being compiled again: @(_StrayGenerated)" />
+  </Target>
 
   <!-- Unpackaged makepri reads PriOutputs (MSIX packaging reads PackagingOutputs).
        An incremental publish can leave both lists without the .xbf files, which

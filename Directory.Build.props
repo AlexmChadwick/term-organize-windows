@@ -5,11 +5,17 @@
     <LangVersion>13</LangVersion>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
-  <!-- The package job publishes MSIX, then the unpackaged app, into the same project.
+  <!-- The package job publishes MSIX, then the unpackaged app.
        A shared obj folder lets the second makepri reuse an index that no longer lists
-       App.xbf and MainWindow.xbf. Keep the unpackaged intermediates separate. -->
+       App.xbf and MainWindow.xbf, so the unpackaged intermediates stay separate.
+       They also have to live outside this project. An obj\unpackaged tree inside
+       src/TermOrganize.App is compiled again by the default **\*.cs glob, which
+       still sees the packaged build's obj\x64\*.g.i.cs. -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TermOrganize.App' and '$(WindowsPackageType)' == 'None'">
-    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj\unpackaged\</BaseIntermediateOutputPath>
-    <BaseOutputPath>$(MSBuildProjectDirectory)\bin\unpackaged\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '.msbuild', 'TermOrganize.App', 'unpackaged', 'obj'))</BaseIntermediateOutputPath>
+    <BaseOutputPath>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '.msbuild', 'TermOrganize.App', 'unpackaged', 'bin'))</BaseOutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TermOrganize.App'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

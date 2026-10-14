@@ -51,6 +51,12 @@ jobs:
           -p:AppxBundle=Never
           -p:AppxPackageDir=${{ github.workspace }}/artifacts/msix/
 
+      - name: Clean project outputs before the unpackaged publish
+        shell: pwsh
+        run: |
+          git clean -xdf src
+          if (Test-Path .msbuild) { Remove-Item -Recurse -Force .msbuild }
+
       - name: Publish unpackaged app
         run: >
           dotnet publish src/TermOrganize.App/TermOrganize.App.csproj

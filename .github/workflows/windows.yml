@@ -64,6 +64,10 @@ jobs:
           -p:GenerateAppxPackageOnBuild=false
           -p:AppxPackageSigningEnabled=false
           -p:EnableMsixTooling=true
+          -p:PublishSingleFile=false
+          -p:PublishTrimmed=false
+          -p:PublishReadyToRun=false
+          -p:DisableEmbeddedXbf=false
           -o artifacts/unpackaged
 
       - name: Zip the unpackaged build
@@ -114,18 +118,58 @@ jobs:
           }
 
           $runtime = Get-ChildItem -Path $unpackaged -Recurse -Filter Microsoft.WindowsAppRuntime.dll -ErrorAction SilentlyContinue | Select-Object -First 1
-          $pri = Get-ChildItem -Path $unpackaged -Recurse -Filter *.pri -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -eq 'resources.pri' } |
+          $priPath = @('resources.pri', 'TermOrganize.App.pri') |
+            ForEach-Object { Join-Path $unpackaged $_ } |
+            Where-Object { Test-Path $_ } |
             Select-Object -First 1
-          if (-not $runtime -or -not $pri) {
+          if (-not $runtime -or -not $priPath) {
             Write-Host "--- unpackaged directory ---"
             Get-ChildItem $unpackaged -Force | Format-Table Name, Length -AutoSize | Out-String | Write-Host
             $missing = @()
-            if (-not $runtime) { $missing += "Microsoft.WindowsAppRuntime.dll (set WindowsAppSDKSelfContained=true and WindowsAppSdkBootstrapInitialize=false)" }
-            if (-not $pri) { $missing += "resources.pri (EnableMsixTooling must stay true so MainWindow.xaml is packaged)" }
+            if (-not $runtime) { $missing += "Microsoft.WindowsAppRuntime.dll (WindowsAppSDKSelfContained=true)" }
+            if (-not $priPath) { $missing += "resources.pri or TermOrganize.App.pri" }
             ($missing -join [Environment]::NewLine) | Set-Content -Path (Join-Path $out "error.txt")
             Show-SweepDiagnostics
             throw "Unpackaged publish is missing: $($missing -join '; ')"
+          }
+
+          $dump = Join-Path $out "pri-dump.xml"
+          $probe = @($env:NUGET_PACKAGES, "$env:USERPROFILE\.nuget\packages", "${env:ProgramFiles(x86)}\Windows Kits\10\bin") | Where-Object { $_ -and (Test-Path $_) }
+          $makepriCandidates = @(Get-ChildItem -Path $probe -Recurse -Filter makepri.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '[\\/]x64[\\/]' })
+          $makepri = $makepriCandidates | Where-Object { $_.FullName -match 'windows.sdk.buildtools' } | Select-Object -Last 1
+          if (-not $makepri) { $makepri = $makepriCandidates | Select-Object -Last 1 }
+          if (-not $makepri) {
+            "makepri.exe was not found." | Set-Content -Path (Join-Path $out "error.txt")
+            Show-SweepDiagnostics
+            throw "makepri.exe was not found."
+          }
+          Write-Host "makepri $($makepri.FullName) dump $priPath ($((Get-Item $priPath).Length) bytes)"
+          & $makepri.FullName dump /if $priPath /of $dump /dt Detailed
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $dump)) {
+            & $makepri.FullName dump /if $priPath /of $dump
+          }
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $dump)) {
+            "makepri dump failed with exit $LASTEXITCODE." | Set-Content -Path (Join-Path $out "error.txt")
+            Show-SweepDiagnostics
+            throw "makepri dump failed with exit $LASTEXITCODE."
+          }
+          Write-Host "--- makepri dump ---"
+          Get-Content $dump | Write-Host
+          $dumpText = Get-Content $dump -Raw
+          $loose = @(Get-ChildItem -Path $unpackaged -Recurse -File -Filter *.xbf -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq 'App.xbf' -or $_.Name -eq 'MainWindow.xbf' })
+          Write-Host "--- compiled XAML ---"
+          if ($loose) { $loose | Format-Table FullName, Length -AutoSize | Out-String | Write-Host } else { Write-Host "(no App.xbf or MainWindow.xbf)" }
+          $names = @($loose | ForEach-Object Name)
+          $indexed = $dumpText -match 'MainWindow' -and $dumpText -match 'App\.(xaml|xbf)'
+          $embedded = $dumpText -match 'EmbeddedData'
+          Write-Host "PRI bytes=$((Get-Item $priPath).Length) indexed=$indexed embeddedData=$embedded loose=$($names -join ',')"
+          if (-not $indexed -or $names -notcontains 'App.xbf' -or $names -notcontains 'MainWindow.xbf') {
+            $reason = "PRI $([IO.Path]::GetFileName($priPath)) is missing compiled MainWindow and App XAML (indexed=$indexed, embeddedData=$embedded, loose=$($names -join ','))."
+            $reason | Set-Content -Path (Join-Path $out "error.txt")
+            Show-SweepDiagnostics
+            throw $reason
           }
 
           $exe = Join-Path $unpackaged "TermOrganize.App.exe"

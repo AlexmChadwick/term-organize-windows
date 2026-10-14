@@ -5,4 +5,11 @@
     <LangVersion>13</LangVersion>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <!-- The package job publishes MSIX, then the unpackaged app, into the same project.
+       A shared obj folder lets the second makepri reuse an index that no longer lists
+       App.xbf and MainWindow.xbf. Keep the unpackaged intermediates separate. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TermOrganize.App' and '$(WindowsPackageType)' == 'None'">
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj\unpackaged\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\bin\unpackaged\</BaseOutputPath>
+  </PropertyGroup>
 </Project>

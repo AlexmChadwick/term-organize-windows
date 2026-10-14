@@ -50,7 +50,8 @@
 
   <!-- windows-latest does not have the Windows App SDK runtime installed.
        An unpackaged publish carries it, and must not call the framework bootstrap.
-       MSIX tooling stays on so resources.pri (MainWindow.xaml) is in the output.
+       MSIX tooling stays on so makepri indexes App.xaml and MainWindow.xbf.
+       Single-file publish and trimming drop that payload, so both stay off.
        MSIX builds keep the framework package. -->
   <PropertyGroup Condition="'$(WindowsPackageType)' == 'None' and $([MSBuild]::IsOSPlatform('Windows')) and '$(RuntimeIdentifier)' != ''">
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
@@ -59,6 +60,10 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <DisableEmbeddedXbf>false</DisableEmbeddedXbf>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsWindowsBuild)' != 'true'">
@@ -112,4 +117,93 @@
   </ItemGroup>
 
   <Target Name="BuildOnNonWindows" Condition="'$(IsWindowsBuild)' != 'true'" />
+
+  <!-- Unpackaged makepri reads PriOutputs (MSIX packaging reads PackagingOutputs).
+       An incremental publish can leave both lists without the .xbf files, which
+       produces a few-kilobyte index and a XamlParseException. Put every project
+       .xbf into both lists, then copy the files next to the exe. The loader
+       accepts resources.pri or <AssemblyName>.pri. -->
+  <Target Name="IndexCompiledXamlInPri"
+          BeforeTargets="_GenerateProjectPriConfigurationFiles"
+          Condition="'$(WindowsPackageType)' == 'None' and $([MSBuild]::IsOSPlatform('Windows'))">
+    <ItemGroup>
+      <_ProjectXamlFile Include="@(ApplicationDefinition->'%(Filename).xbf')" />
+      <_ProjectXamlFile Include="@(Page->'%(Filename).xbf')" />
+      <_DiskXaml Include="$(IntermediateOutputPath)%(_ProjectXamlFile.Identity)" />
+      <_DiskXaml Remove="@(_DiskXaml)" Condition="!Exists('%(Identity)')" />
+      <_IndexedXamlNames Include="@(PriOutputs->'%(Filename)%(Extension)')" Condition="'%(Extension)' == '.xbf'" />
+      <_IndexedXamlNames Include="@(PackagingOutputs->'%(Filename)%(Extension)')" Condition="'%(Extension)' == '.xbf'" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_IndexedXamlList>;@(_IndexedXamlNames);</_IndexedXamlList>
+      <_DiskXamlList>;@(_DiskXaml->'%(Filename)%(Extension)');</_DiskXamlList>
+    </PropertyGroup>
+    <ItemGroup>
+      <_DiskXaml Include="$(OutputPath)%(_ProjectXamlFile.Identity)"
+                 Condition="Exists('$(OutputPath)%(_ProjectXamlFile.Identity)') and !$([System.String]::Copy('$(_DiskXamlList)').Contains(';%(Filename)%(Extension);'))" />
+      <_DiskXaml Remove="@(_DiskXaml)"
+                 Condition="$([System.String]::Copy('$(_IndexedXamlList)').Contains(';%(Filename)%(Extension);'))" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_FinalXamlList>;@(_DiskXaml->'%(Filename)%(Extension)');@(_IndexedXamlNames);</_FinalXamlList>
+    </PropertyGroup>
+    <Error Condition="!$([System.String]::Copy('$(_FinalXamlList)').Contains(';%(Identity);'))"
+           Text="Compiled XAML %(_ProjectXamlFile.Identity) was not produced under '$(IntermediateOutputPath)' or '$(OutputPath)'. The unpackaged app cannot load its window." />
+    <Message Importance="high" Text="Indexing compiled XAML into the unpackaged PRI: @(_DiskXaml). Already indexed: @(_IndexedXamlNames)." />
+    <ItemGroup Condition="'@(_DiskXaml)' != ''">
+      <PriOutputs Include="@(_DiskXaml)">
+        <OutputGroup>EmbedOutputGroupForPackaging</OutputGroup>
+        <ProjectName>$(ProjectName)</ProjectName>
+        <TargetPath>%(Filename)%(Extension)</TargetPath>
+      </PriOutputs>
+      <PackagingOutputs Include="@(_DiskXaml)">
+        <OutputGroup>EmbedOutputGroupForPackaging</OutputGroup>
+        <ProjectName>$(ProjectName)</ProjectName>
+        <TargetPath>%(Filename)%(Extension)</TargetPath>
+      </PackagingOutputs>
+    </ItemGroup>
+    <Delete Files="$(ProjectPriFullPath)" Condition="'$(ProjectPriFullPath)' != '' and Exists('$(ProjectPriFullPath)')" />
+    <Delete Files="$(_PriConfigXmlPath);$(_FilteredLayoutResfilesPath);$(_ResourcesResfilesPath);$(_PriResfilesPath);$(_EmbedFileResfilePath)" />
+  </Target>
+
+  <Target Name="PublishCompiledXaml"
+          AfterTargets="Publish"
+          Condition="'$(WindowsPackageType)' == 'None' and $([MSBuild]::IsOSPlatform('Windows'))">
+    <ItemGroup>
+      <_ProjectXamlFile Include="@(ApplicationDefinition->'%(Filename).xbf')" />
+      <_ProjectXamlFile Include="@(Page->'%(Filename).xbf')" />
+      <_PublishXaml Include="$(IntermediateOutputPath)%(_ProjectXamlFile.Identity)" />
+      <_PublishXaml Remove="@(_PublishXaml)" Condition="!Exists('%(Identity)')" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_PublishXamlNames>;@(_PublishXaml->'%(Filename)%(Extension)');</_PublishXamlNames>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PublishXaml Include="$(OutputPath)%(_ProjectXamlFile.Identity)"
+                   Condition="Exists('$(OutputPath)%(_ProjectXamlFile.Identity)') and !$([System.String]::Copy('$(_PublishXamlNames)').Contains(';%(Filename)%(Extension);'))" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_PublishXamlNames>;@(_PublishXaml->'%(Filename)%(Extension)');</_PublishXamlNames>
+    </PropertyGroup>
+    <Error Condition="!$([System.String]::Copy('$(_PublishXamlNames)').Contains(';%(Identity);'))"
+           Text="Compiled XAML %(_ProjectXamlFile.Identity) was not produced. The unpackaged app cannot load its window." />
+    <Copy SourceFiles="@(_PublishXaml)"
+          DestinationFiles="$(PublishDir)%(Filename)%(Extension)"
+          SkipUnchangedFiles="true" />
+    <PropertyGroup>
+      <_AppPri Condition="Exists('$(PublishDir)resources.pri')">$(PublishDir)resources.pri</_AppPri>
+      <_AppPri Condition="'$(_AppPri)' == '' and Exists('$(PublishDir)$(AssemblyName).pri')">$(PublishDir)$(AssemblyName).pri</_AppPri>
+    </PropertyGroup>
+    <Copy SourceFiles="$(_AppPri)"
+          DestinationFiles="$(PublishDir)resources.pri"
+          Condition="'$(_AppPri)' != '' and !Exists('$(PublishDir)resources.pri')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_AppPri)"
+          DestinationFiles="$(PublishDir)$(AssemblyName).pri"
+          Condition="'$(_AppPri)' != '' and !Exists('$(PublishDir)$(AssemblyName).pri')"
+          SkipUnchangedFiles="true" />
+    <Error Condition="'$(_AppPri)' == ''"
+           Text="Publish did not produce resources.pri or $(AssemblyName).pri." />
+    <Message Importance="high" Text="Published compiled XAML: @(_PublishXaml). PRI: $(_AppPri)." />
+  </Target>
 </Project>

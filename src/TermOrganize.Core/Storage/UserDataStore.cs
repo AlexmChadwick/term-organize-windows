@@ -422,7 +422,10 @@ public sealed class UserDataStore
 
     private void WriteFile()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_path))!);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(_path));
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        if (File.Exists(_path))
+            File.Copy(_path, _path + ".bak", overwrite: true);
         var temp = _path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(Data(), AppJson.UserData));
         File.Move(temp, _path, overwrite: true);

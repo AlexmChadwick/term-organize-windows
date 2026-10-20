@@ -224,6 +224,8 @@ public sealed class DegreePlanCourse
     public string Label { get; set; } = "";
     public string Title { get; set; } = "";
     public double Credits { get; set; }
+    /// <summary>Section chosen for this course, when the plan names one. The app keeps the field on load.</summary>
+    public string? SelectedCrn { get; set; }
 
     public DegreePlanCourse() { }
 

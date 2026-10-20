@@ -15,9 +15,18 @@ public sealed class AppSession
     public string? Error { get; private set; }
     public IReadOnlyList<Term> KnownTerms { get; private set; } = [];
     public event Action? Changed;
+    /// <summary>Increments when UserData.json is reloaded after another process writes it.</summary>
+    public int ExternalDataRevision { get; private set; }
 
     public AppSession()
     {
+        try { Store.WatchForExternalEdits(); }
+        catch (Exception) { /* save-time merge still protects the file */ }
+        Store.ExternalEditApplied += () =>
+        {
+            ExternalDataRevision++;
+            Changed?.Invoke();
+        };
         _ = LoadAsync();
     }
 

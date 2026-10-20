@@ -55,6 +55,8 @@ If none of those files exist yet and the package folder is present, the next wri
 
 Writes reload the file, compare `expected_revision`, then save with a temp file and rename. The previous file is copied to `UserData.json.bak` (one rolling backup). If the desktop app saved in between, the write fails and names the current revision.
 
+The desktop app also watches this file. Before it saves, it hashes the bytes and compares that revision, along with the UTC write time, to the file it last loaded. Plans only one side edited are merged. A plan both sides edited keeps the file already on disk, and the app's copy is saved beside it as `<name> (edited in app)`, so an MCP write is not replaced. A change while the window is open is reloaded through a debounced file watcher.
+
 Degree-plan courses may include `selectedCrn`. The app's loader keeps that field. The server also mirrors the plan into a non-primary schedule (`IsPrimary` false) so the Schedules page can show the chosen section. That schedule's id is derived from the degree plan id and the term code. Other schedules are left alone.
 
 ## Claude Desktop

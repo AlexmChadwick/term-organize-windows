@@ -1,6 +1,8 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using System.IO.Compression;
+using System.Text.RegularExpressions;
 using TermOrganize.Core;
 
 namespace TermOrganize.Core.Tests;
@@ -32,6 +34,39 @@ public class BundledCatalogTests
         Assert.All(catalog.Courses, course => Assert.True(course.DetailsLoaded));
         Assert.Contains(catalog.Sections, section => section.Instructors?.Any(instructor => instructor.Email is null) == true);
         Assert.Contains(catalog.Sections, section => section.Instructors?.Any(instructor => instructor.Email is not null) == true);
+    }
+
+    [Fact]
+    public void Spring2027BundleHasNoOtherEmailDomains()
+    {
+        var gzipPath = BundledCatalog.Resolve("term-202730.json.gz");
+        var catalogPath = BundledCatalog.Resolve("term-202730.catalog");
+        Assert.NotNull(gzipPath);
+        Assert.NotNull(catalogPath);
+        var fromGzip = GzipJson(gzipPath);
+        var fromCatalog = LzfseDecoder.Decompress(File.ReadAllBytes(catalogPath));
+        Assert.Equal(fromGzip, fromCatalog);
+        AssertOnlyNortheasternDomains(fromGzip);
+    }
+
+    private static byte[] GzipJson(string path)
+    {
+        using var gzip = new GZipStream(File.OpenRead(path), CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        gzip.CopyTo(output);
+        return output.ToArray();
+    }
+
+    private static void AssertOnlyNortheasternDomains(byte[] json)
+    {
+        var text = System.Text.Encoding.UTF8.GetString(json);
+        var addresses = Regex.Matches(text, @"[^\s""@]+@([^\s""@]+)");
+        Assert.NotEmpty(addresses);
+        foreach (Match address in addresses)
+        {
+            var domain = address.Groups[1].Value;
+            Assert.True(domain is "northeastern.edu" or "neu.edu", address.Value);
+        }
     }
 
     [Fact]

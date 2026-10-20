@@ -139,8 +139,9 @@ public class SearchEngineTests
         var path = BundledCatalog.Resolve("term-202710.catalog");
         Assert.NotNull(path);
         var fromLzfse = CatalogArchive.Read(path);
-        Assert.Equal(Index.Value.Courses.Count, fromLzfse.Courses.Count);
-        Assert.Equal(Index.Value.Catalog.Sections.Count, fromLzfse.Sections.Count);
+        var fromGzip = BundledCatalog.Load("202710");
+        Assert.Equal(fromGzip.Courses.Count, fromLzfse.Courses.Count);
+        Assert.Equal(fromGzip.Sections.Count, fromLzfse.Sections.Count);
     }
 
     [Fact]

@@ -5,7 +5,7 @@ namespace TermOrganize.Core;
 
 /// <summary>
 /// Term catalogs downloaded from Banner, stored as gzip next to the user's data.
-/// The bundled Fall 2026 snapshot stays in the app; every other term is fetched on demand.
+/// Bundled snapshots stay in the app. Any other term is fetched on demand.
 /// </summary>
 public static class TermCatalogCache
 {

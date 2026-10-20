@@ -25,7 +25,7 @@ public sealed class AppSession
     {
         try
         {
-            var catalog = await Task.Run(() => BundledCatalog.Load()).ConfigureAwait(false);
+            var catalog = await Task.Run(() => OpenStartupCatalog(Store.Preferences.SelectedTermCode)).ConfigureAwait(false);
             Remember(catalog);
             Error = null;
         }
@@ -39,8 +39,8 @@ public sealed class AppSession
     public void RememberTerms(IReadOnlyList<Term> terms) => KnownTerms = terms;
 
     /// <summary>
-    /// Switches to a Banner term. A term already in memory or on disk opens immediately.
-    /// Anything else is downloaded from Banner and kept for the next launch.
+    /// Switches to a Banner term. A term already in memory, in the download cache, or
+    /// bundled with the app opens immediately. Anything else is downloaded and kept.
     /// </summary>
     public async Task SelectAsync(Term term, bool force = false, Action<string>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -59,6 +59,16 @@ public sealed class AppSession
                 Remember(disk);
                 return;
             }
+            try
+            {
+                var bundled = BundledCatalog.TryLoad(term.Code);
+                if (bundled is not null)
+                {
+                    Remember(bundled);
+                    return;
+                }
+            }
+            catch (Exception) { /* a damaged snapshot falls through to Banner */ }
         }
         progress?.Invoke($"Downloading {term.Name}\u2026");
         try
@@ -99,6 +109,28 @@ public sealed class AppSession
     }
 
     public IReadOnlyList<CourseSection> Sections(CourseKey key) => Index?.Sections(key) ?? [];
+
+    private static TermCatalog OpenStartupCatalog(string? savedCode)
+    {
+        var code = BundledCatalog.StartupTerm(savedCode, cached =>
+        {
+            try { return File.Exists(TermCatalogCache.PathFor(cached)); }
+            catch (Exception) { return false; }
+        });
+        try
+        {
+            var bundled = BundledCatalog.TryLoad(code);
+            if (bundled is not null) return bundled;
+        }
+        catch (Exception) { /* try the download cache, then the newest snapshot */ }
+        try
+        {
+            var cached = TermCatalogCache.TryLoad(code);
+            if (cached is not null) return cached;
+        }
+        catch (Exception) { }
+        return BundledCatalog.Load();
+    }
 
     private void Remember(TermCatalog catalog)
     {

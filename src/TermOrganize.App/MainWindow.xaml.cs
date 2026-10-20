@@ -188,7 +188,10 @@ public sealed partial class MainWindow : Window
         var session = App.Session;
         Title = session.Term is null ? "Term Organize" : $"Term Organize — {session.Term.Name}";
         if (session.Index is not null && TermPicker.Items.Count == 0)
-            TermPicker.Items.Add(new TermChoice(session.Index.Term));
+        {
+            foreach (var term in BundledCatalog.PickerTerms(session.Term, []))
+                TermPicker.Items.Add(new TermChoice(term));
+        }
         if (!ReferenceEquals(_shownIndex, session.Index) || _shownError != session.Error)
             Show(_area);
         else
@@ -199,21 +202,16 @@ public sealed partial class MainWindow : Window
     {
         IReadOnlyList<Term> live = [];
         try { live = await BannerTermList.FetchAsync(); }
-        catch (Exception) { /* offline: the bundled term still works */ }
+        catch (Exception) { /* offline: the bundled terms still work */ }
+        var bundled = BundledCatalog.BundledTerms();
         DispatcherQueue.TryEnqueue(() =>
         {
             _fillingTerms = true;
             TermPicker.Items.Clear();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            void Add(Term term)
-            {
-                if (term.Code.Length == 0 || !seen.Add(term.Code)) return;
-                TermPicker.Items.Add(new TermChoice(term));
-            }
-            if (App.Session.Index is not null) Add(App.Session.Index.Term);
-            foreach (var term in live) Add(term);
-            App.Session.RememberTerms(seen.Count == 0 ? [] : TermPicker.Items.OfType<TermChoice>().Select(choice => choice.Term).ToList());
-            var selected = App.Session.Term?.Code ?? App.Session.Store.Preferences.SelectedTermCode;
+            var options = BundledCatalog.PickerTerms(App.Session.Term, live, bundled);
+            foreach (var term in options) TermPicker.Items.Add(new TermChoice(term));
+            App.Session.RememberTerms(options);
+            var selected = BundledCatalog.SelectedCode(App.Session.Term?.Code, App.Session.Store.Preferences.SelectedTermCode);
             TermPicker.SelectedIndex = 0;
             for (var i = 0; i < TermPicker.Items.Count; i++)
             {

@@ -28,11 +28,34 @@ public static class DegreePlanSchedule
         var wanted = keys.ToHashSet();
         var existing = store.PlansIn(termCode).FirstOrDefault(plan =>
             plan.Courses.Select(course => course.Key).ToHashSet().SetEquals(wanted));
-        if (existing is not null) return new DegreeScheduleBuild(existing, false, keys.Count);
+        if (existing is not null)
+        {
+            store.UpdatePlan(existing.Id, plan => CopyPins(plan, semester.Courses));
+            return new DegreeScheduleBuild(store.Plan(existing.Id) ?? existing, false, keys.Count);
+        }
 
         var name = DegreePlanEditing.ScheduleName(semester, store.PlansIn(termCode).Select(plan => plan.Name));
         var schedule = store.CreatePlan(name, termCode);
         foreach (var key in keys) store.AddCourse(key, schedule.Id);
+        store.UpdatePlan(schedule.Id, plan => CopyPins(plan, semester.Courses));
         return new DegreeScheduleBuild(store.Plan(schedule.Id) ?? schedule, true, keys.Count);
+    }
+
+    /// <summary>
+    /// Copies each distinct manual CRN onto the schedule without removing a CRN already selected there.
+    /// A course that is not on the schedule is left alone.
+    /// </summary>
+    public static int CopyPins(SchedulePlan schedule, IEnumerable<DegreePlanCourse> courses)
+    {
+        var added = 0;
+        foreach (var course in courses)
+        {
+            if (course.Key is not CourseKey key || !schedule.Contains(key)) continue;
+            var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+            if (pin is null || schedule.SelectedCRNs.Contains(pin)) continue;
+            schedule.SelectedCRNs.Add(pin);
+            added++;
+        }
+        return added;
     }
 }

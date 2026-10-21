@@ -134,13 +134,14 @@ public sealed class CatalogTools
     [Description("Conflict-free section combinations for the requested courses, best first.")]
     public Dictionary<string, object?> suggest_schedule(
         [Description("Banner term code.")] string term,
-        [Description("Courses, each with subject and number.")] List<CourseRef> courses,
+        [Description("Courses, each with subject and number. Optional crn locks that section. The same subject and number may be repeated only when every listing has a different crn.")] List<CourseRef> courses,
         [Description("Optional no_classes_before, no_classes_after, and days_off.")] ScheduleConstraints? constraints = null)
     {
         var index = RequireIndex(term);
         if (courses is null || courses.Count == 0)
             throw new ToolFailure("invalid_argument", "courses is required.");
         var inputs = new List<ScheduleCourseInput>();
+        var listed = new Dictionary<CourseKey, List<string?>>();
         foreach (var course in courses)
         {
             var key = PlanReorganizer.RequireKey(course.Subject, course.Number);
@@ -149,8 +150,20 @@ public sealed class CatalogTools
             var sections = index.Sections(key);
             if (sections.Count == 0)
                 throw new ToolFailure("not_found", $"{key} has no sections in {index.Term.Code}.");
+            var pin = DegreeCourseRepeats.CleanCrn(course.Crn);
+            if (!listed.TryGetValue(key, out var prior)) listed[key] = prior = [];
+            if (prior.Count > 0 && (pin is null || prior.Any(existing => existing is null || string.Equals(existing, pin, StringComparison.Ordinal))))
+                throw new ToolFailure("invalid_argument", pin is null || prior.Any(existing => existing is null)
+                    ? $"{key} is listed more than once. Each listing needs its own CRN."
+                    : $"{key} CRN {pin} is listed more than once.");
+            if (pin is not null && sections.All(section => !string.Equals(section.Crn, pin, StringComparison.Ordinal)))
+                throw new ToolFailure("not_found", $"CRN {pin} is not a section of {key} in {index.Term.Code}.");
+            prior.Add(pin);
             var details = index.Course(key)!;
-            inputs.Add(new ScheduleCourseInput(key, true, sections, minCredits: details.MinCredits, maxCredits: details.MaxCredits));
+            inputs.Add(new ScheduleCourseInput(key, true, sections, minCredits: details.MinCredits, maxCredits: details.MaxCredits)
+            {
+                PinnedCrn = pin,
+            });
         }
         var filters = new ScheduleFilters
         {

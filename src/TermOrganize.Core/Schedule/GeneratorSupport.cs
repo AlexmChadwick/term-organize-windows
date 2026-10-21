@@ -6,18 +6,60 @@ namespace TermOrganize.Core;
 
 public static class ScheduleCourseInputs
 {
-    public static List<ScheduleCourseInput> Inputs(SchedulePlan plan, CatalogIndex index) =>
-        plan.Courses.Select(planCourse =>
+    /// <summary>
+    /// One search slot per plan course. Each manually selected CRN of that course is its own slot,
+    /// so two special-topics sections are not merged into one choice.
+    /// </summary>
+    public static List<ScheduleCourseInput> Inputs(SchedulePlan plan, CatalogIndex index)
+    {
+        var result = new List<ScheduleCourseInput>();
+        foreach (var planCourse in plan.Courses)
         {
             var course = index.Course(planCourse.Key);
-            return new ScheduleCourseInput(
-                planCourse.Key,
-                planCourse.IsRequired,
-                index.Sections(planCourse.Key),
-                planCourse.ExcludedCRNs,
-                (int)Math.Ceiling(course?.MinCredits ?? 0),
-                (int)Math.Ceiling(course?.MaxCredits ?? 0));
-        }).ToList();
+            var sections = index.Sections(planCourse.Key);
+            var pins = new List<string>();
+            foreach (var crn in plan.SelectedCRNs)
+            {
+                var section = index.Section(crn);
+                if (section is null || section.CourseKey != planCourse.Key) continue;
+                if (pins.Contains(section.Crn)) continue;
+                pins.Add(section.Crn);
+            }
+            if (pins.Count == 0)
+            {
+                result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null));
+                continue;
+            }
+            foreach (var pin in pins)
+                result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, pin));
+        }
+        return result;
+    }
+
+    /// <summary>One search slot per degree-plan course. A selected CRN locks that slot. Entries are not merged by subject and number.</summary>
+    public static List<ScheduleCourseInput> ForDegreeCourses(IEnumerable<DegreePlanCourse> courses, CatalogIndex index)
+    {
+        var result = new List<ScheduleCourseInput>();
+        foreach (var course in courses)
+        {
+            if (course.Key is not CourseKey key) continue;
+            var listed = index.Course(key);
+            result.Add(Input(key, true, index.Sections(key), [], listed, DegreeCourseRepeats.CleanCrn(course.SelectedCrn)));
+        }
+        return result;
+    }
+
+    private static ScheduleCourseInput Input(
+        CourseKey key,
+        bool isRequired,
+        IReadOnlyList<CourseSection> sections,
+        IEnumerable<string> excluded,
+        Course? course,
+        string? pinnedCrn) =>
+        new(key, isRequired, sections, excluded, (int)Math.Ceiling(course?.MinCredits ?? 0), (int)Math.Ceiling(course?.MaxCredits ?? 0))
+        {
+            PinnedCrn = pinnedCrn,
+        };
 }
 
 public static class GeneratedScheduleFavorites
@@ -220,6 +262,12 @@ public static class SchedulePlanActions
         var added = new List<CourseKey>();
         foreach (var key in suggestion.Courses)
             if (userData.AddCourse(key, planId, required: true)) added.Add(key);
+        if (suggestion.Origin is ScheduleAutofillSuggestion.Source.FromDegreePlan degree)
+        {
+            var term = userData.DegreePlan(degree.PlanId)?.Terms.FirstOrDefault(item => item.Id == degree.TermId);
+            if (term is not null)
+                userData.UpdatePlan(planId, plan => DegreePlanSchedule.CopyPins(plan, term.Courses));
+        }
         return added;
     }
 

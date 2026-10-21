@@ -211,22 +211,7 @@ public static class DegreePlanAnalysis
         return result;
     }
 
-    /// <summary>Same rule as <c>DegreeCourseRepeats</c>: another topic is not a repeat.</summary>
-    private static bool CountsSeparately(DegreePlanCourse course, DegreePlanCourse other)
-    {
-        if (course.Credits <= 0 || other.Credits <= 0) return false;
-        var first = NormalizedTitle(course.Title);
-        var second = NormalizedTitle(other.Title);
-        if (first.Length > 0 && second.Length > 0 && first != second) return true;
-        return first.Contains("topic", StringComparison.Ordinal) || second.Contains("topic", StringComparison.Ordinal);
-    }
-
-    private static string NormalizedTitle(string title)
-    {
-        var expanded = title.ToLowerInvariant().Replace("&", " and ", StringComparison.Ordinal);
-        var builder = new System.Text.StringBuilder(expanded.Length);
-        foreach (var ch in expanded)
-            if (char.IsLetterOrDigit(ch)) builder.Append(ch);
-        return builder.ToString();
-    }
+    /// <summary>Same rule as <c>DegreeCourseRepeats</c>: another topic, or another manual CRN, is not a repeat.</summary>
+    private static bool CountsSeparately(DegreePlanCourse course, DegreePlanCourse other) =>
+        DegreeCourseRepeats.CountsSeparately(course, other);
 }

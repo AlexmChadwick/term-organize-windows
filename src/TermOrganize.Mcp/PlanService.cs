@@ -70,17 +70,13 @@ public sealed class PlanService
         {
             var term = EnsureTerm(plan, termLabel);
             EnsureKnown(key, term, crn);
-            if (FindCourse(plan, key) is { } existing)
-            {
-                var where = plan.Terms.First(item => item.Courses.Contains(existing)).Name;
-                if (where == term.Name)
-                    throw new ToolFailure("invalid_argument", $"{key} is already in {where}.");
-                throw new ToolFailure("invalid_argument", $"{key} is already in {where}. Use move_course.");
-            }
+            var incoming = DegreeCourseRepeats.CleanCrn(crn);
+            if (!DegreeCourseEntries.Allows(plan, key, incoming))
+                throw new ToolFailure("invalid_argument", DuplicateListing(plan, key, term, incoming));
             var details = _library.FindCourse(key)!;
             term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits)
             {
-                SelectedCrn = string.IsNullOrWhiteSpace(crn) ? null : crn.Trim(),
+                SelectedCrn = incoming,
             });
         });
     }
@@ -108,14 +104,8 @@ public sealed class PlanService
                 throw new ToolFailure("invalid_argument", "from_term and to_term are the same.");
             var course = from.Courses.FirstOrDefault(item => item.Key == key)
                 ?? throw new ToolFailure("not_found", $"{key} is not in {from.Name}.");
-            if (to.Courses.Any(item => item.Key == key))
+            if (!DegreeCourseEntries.Allows(plan, key, course.SelectedCrn, course.Id))
                 throw new ToolFailure("invalid_argument", $"{key} is already in {to.Name}.");
-            if (!string.IsNullOrWhiteSpace(course.SelectedCrn))
-            {
-                var destination = _library.IndexFor(to.Season, to.Year);
-                if (destination?.Section(course.SelectedCrn)?.CourseKey != key)
-                    course.SelectedCrn = null;
-            }
             from.Courses.Remove(course);
             to.Courses.Add(course);
         });
@@ -126,13 +116,30 @@ public sealed class PlanService
         var key = PlanReorganizer.RequireKey(subject, number);
         if (string.IsNullOrWhiteSpace(crn))
             throw new ToolFailure("invalid_argument", "crn is required.");
+        var store = Open();
+        var current = Require(store, planId);
+        CheckRevision(current, expectedRevision);
+        var term = RequireTerm(current, termLabel);
+        var matches = term.Courses.Where(item => item.Key == key).ToList();
+        if (matches.Count == 0)
+            throw new ToolFailure("not_found", $"{key} is not in {term.Name}.");
+        var incoming = crn.Trim();
+        EnsureCrn(key, term, incoming);
+        if (matches.Any(item => string.Equals(DegreeCourseRepeats.CleanCrn(item.SelectedCrn), incoming, StringComparison.Ordinal)))
+            return Project(current);
+        DegreePlanCourse target;
+        if (matches.Count == 1)
+            target = matches[0];
+        else if (matches.Where(item => DegreeCourseRepeats.CleanCrn(item.SelectedCrn) is null).ToList() is { Count: 1 } open)
+            target = open[0];
+        else
+            throw new ToolFailure("invalid_argument", $"{key} has more than one chosen section in {term.Name}. set_section can fill the listing that has no CRN, or replace the CRN when it is the only listing.");
         return Mutate(planId, expectedRevision, plan =>
         {
-            var term = RequireTerm(plan, termLabel);
-            var course = term.Courses.FirstOrDefault(item => item.Key == key)
-                ?? throw new ToolFailure("not_found", $"{key} is not in {term.Name}.");
-            EnsureCrn(key, term, crn);
-            course.SelectedCrn = crn.Trim();
+            var storedTerm = RequireTerm(plan, termLabel);
+            var stored = storedTerm.Courses.FirstOrDefault(item => item.Id == target.Id)
+                ?? throw new ToolFailure("not_found", $"{key} is not in {storedTerm.Name}.");
+            stored.SelectedCrn = incoming;
         });
     }
 
@@ -234,12 +241,19 @@ public sealed class PlanService
             schedule.TermCode = code;
             schedule.IsPrimary = false;
             schedule.UpdatedAt = plan.UpdatedAt;
-            schedule.Courses = courses.Select((course, index) => new PlanCourse
+            var seen = new HashSet<CourseKey>();
+            var slots = new List<PlanCourse>();
+            foreach (var course in courses)
             {
-                Key = course.Key!.Value,
-                IsRequired = true,
-                ColorIndex = index % CourseColorPalette.Count,
-            }).ToList();
+                if (course.Key is not CourseKey key || !seen.Add(key)) continue;
+                slots.Add(new PlanCourse
+                {
+                    Key = key,
+                    IsRequired = true,
+                    ColorIndex = slots.Count % CourseColorPalette.Count,
+                });
+            }
+            schedule.Courses = slots;
             schedule.SelectedCRNs = courses
                 .Select(course => course.SelectedCrn)
                 .Where(crn => !string.IsNullOrWhiteSpace(crn))
@@ -367,8 +381,18 @@ public sealed class PlanService
         return term;
     }
 
-    private static DegreePlanCourse? FindCourse(DegreePlan plan, CourseKey key) =>
-        plan.Terms.SelectMany(term => term.Courses).FirstOrDefault(course => course.Key == key);
+    private static string DuplicateListing(DegreePlan plan, CourseKey key, DegreePlanTerm term, string? crn)
+    {
+        var matches = plan.Terms
+            .SelectMany(item => item.Courses.Where(course => course.Key == key).Select(course => (Term: item, Course: course)))
+            .ToList();
+        if (crn is not null && matches.Any(item => string.Equals(DegreeCourseRepeats.CleanCrn(item.Course.SelectedCrn), crn, StringComparison.Ordinal)))
+            return $"{key} CRN {crn} is already on the plan.";
+        var where = matches.Count == 0 ? "completed courses" : matches[0].Term.Name;
+        if (crn is null)
+            return where == term.Name ? $"{key} is already in {where}." : $"{key} is already in {where}. Use move_course.";
+        return $"{key} is already in {where}. A second listing needs its own CRN on every copy.";
+    }
 
     private Dictionary<string, object?> Summary(DegreePlan plan) => new()
     {

@@ -11,6 +11,9 @@ public sealed class CourseRef
 {
     public string Subject { get; set; } = "";
     public string Number { get; set; } = "";
+
+    /// <summary>When set, this listing is that section. A repeated subject and number is valid only when every listing has a different CRN.</summary>
+    public string? Crn { get; set; }
 }
 
 public sealed class ScheduleConstraints

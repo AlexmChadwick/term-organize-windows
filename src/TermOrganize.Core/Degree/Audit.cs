@@ -36,6 +36,9 @@ public sealed partial class DegreeAudit
         public CourseKey? Satisfies { get; set; }
         public int Instance { get; set; }
 
+        /// <summary>Manual section, when the plan named one. Distinct CRNs are separate audit entries.</summary>
+        public string? SelectedCrn { get; set; }
+
         public string Id => Instance == 0 ? Key.ToString() : $"{Key} ({Instance + 1})";
         public bool IsCompleted => Semester is null;
         public bool ViaEquivalence => Satisfies is not null;
@@ -51,6 +54,7 @@ public sealed partial class DegreeAudit
             BySubstitution = BySubstitution,
             Satisfies = Satisfies,
             Instance = Instance,
+            SelectedCrn = SelectedCrn,
         };
     }
 
@@ -261,7 +265,19 @@ public static class DegreeCourseRepeats
     }
 
     public static bool CountsSeparately(DegreePlanCourse a, DegreePlanCourse b) =>
+        DistinctManualCrns(a.SelectedCrn, b.SelectedCrn) ||
         CountsSeparately(a.Title, a.Credits, b.Title, b.Credits);
+
+    /// <summary>True when both listings name a CRN and the CRNs differ.</summary>
+    public static bool DistinctManualCrns(string? crn, string? other)
+    {
+        var first = CleanCrn(crn);
+        var second = CleanCrn(other);
+        return first is not null && second is not null && !string.Equals(first, second, StringComparison.Ordinal);
+    }
+
+    public static string? CleanCrn(string? crn) =>
+        string.IsNullOrWhiteSpace(crn) ? null : crn.Trim();
 
     private static string NormalizedTitle(string title) =>
         new(title.ToLowerInvariant().Replace("&", " and ", StringComparison.Ordinal).Where(char.IsLetterOrDigit).ToArray());

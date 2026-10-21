@@ -78,7 +78,22 @@ public static class PlanReorganizer
                 if (library.FindCourse(key) is null)
                     throw new ToolFailure("not_found", $"Unknown course {key}.");
                 var details = library.FindCourse(key)!;
-                term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits));
+                var pin = DegreeCourseRepeats.CleanCrn(course.Crn);
+                if (pin is not null)
+                {
+                    var index = library.IndexFor(season, year);
+                    var section = index?.Section(pin);
+                    if (section is null || section.CourseKey != key)
+                        throw new ToolFailure("not_found", $"CRN {pin} is not a section of {key}.");
+                }
+                if (!DegreeCourseEntries.Allows(plan, key, pin))
+                    throw new ToolFailure("invalid_argument", pin is null
+                        ? $"{key} is listed more than once. Each listing needs its own CRN."
+                        : $"{key} CRN {pin} is already listed.");
+                term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits)
+                {
+                    SelectedCrn = pin,
+                });
             }
         }
         plan.SortTerms();
@@ -102,13 +117,8 @@ public static class PlanReorganizer
                 if (course.Key is not CourseKey key || PlacementOk(plan, term, key, library)) continue;
                 var target = Destination(plan, term, key, library);
                 if (target is null) continue;
+                if (!DegreeCourseEntries.Allows(plan, key, course.SelectedCrn, course.Id)) continue;
                 term.Courses.Remove(course);
-                if (!string.IsNullOrWhiteSpace(course.SelectedCrn))
-                {
-                    var index = library.IndexFor(target.Season, target.Year);
-                    if (index?.Section(course.SelectedCrn)?.CourseKey != key)
-                        course.SelectedCrn = null;
-                }
                 target.Courses.Add(course);
                 var why = Offered(library, term, key)
                     ? $"Prerequisite order on the plan is not kept in {term.Name}."

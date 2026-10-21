@@ -192,7 +192,9 @@ No arguments.
 
 ### suggest_schedule
 
-`term`, `courses` (array of `{ "subject", "number" }`), optional `constraints`:
+`term`, `courses` (array of `{ "subject", "number", "crn"? }`), optional `constraints`:
+
+`crn` locks that listing to one section. suggest_schedule will not substitute another section of the same course. The same subject and number may appear more than once only when every listing has a `crn` and the CRNs differ. A repeated course without those CRNs, or the same CRN twice, is `invalid_argument`.
 
 * `no_classes_before` and `no_classes_after`: 24-hour `HH:MM` such as `08:00`, 12-hour `8:00 AM` or `8am`, or a JSON number of minutes from midnight. Anything else is `invalid_argument`.
 * `days_off`: array of `U M T W R F S`, full names, or a string such as `MWF`.
@@ -214,9 +216,9 @@ Up to 8 schedules, best first.
 
 ### reorganize_plan
 
-Does not save. Pass either `plan_id` or `plan`, not both. `plan` is `{ "terms": [ { "term": "202710", "courses": [ { "subject": "CS", "number": "3000" } ] } ] }`. `term` is a Banner code such as `202710` or `202730`.
+Does not save. Pass either `plan_id` or `plan`, not both. `plan` is `{ "terms": [ { "term": "202710", "courses": [ { "subject": "CS", "number": "3000", "crn": "12345" } ] } ] }`. `term` is a Banner code such as `202710` or `202730`. Optional `crn` is kept on the course. A move does not replace it with another section of the same number. The same subject and number may be repeated in `plan` only when every listing has a different `crn`.
 
-A course moves only into a term the plan already has. The target term's bundled catalog must offer the course, prerequisite order within the plan must be kept, and it never adds a semester. A course is offered in a term when that term's bundled catalog has at least one section of it. Prerequisites that are not on the plan do not block the move.
+A course moves only into a term the plan already has. The target term's bundled catalog must offer the course, prerequisite order within the plan must be kept, and it never adds a semester. A chosen CRN moves with the course and is not replaced or cleared. A course is offered in a term when that term's bundled catalog has at least one section of it. Prerequisites that are not on the plan do not block the move.
 
 ```json
 {
@@ -267,7 +269,7 @@ A course moves only into a term the plan already has. The target term's bundled 
 
 `plan_id`, `term`, `subject`, `number`, optional `crn`, `expected_revision`.
 
-The course must exist in a bundled catalog. A CRN must be a section of that course in that term. A course already on the plan is rejected; use `move_course`. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`.
+The course must exist in a bundled catalog. A CRN must be a section of that course in that term. A second listing of the same subject and number is accepted only when every listing, including the new one, has a manually selected CRN and the CRNs differ. Without those CRNs the course is rejected; use `move_course`. The same CRN twice is rejected. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`.
 
 ### remove_course
 
@@ -277,11 +279,11 @@ The course must exist in a bundled catalog. A CRN must be a section of that cour
 
 `plan_id`, `subject`, `number`, `from_term`, `to_term`, `expected_revision`.
 
-If the selected CRN is not a section of the course in the destination term, the CRN is cleared.
+A chosen CRN stays on the course. `move_course` does not clear it when the destination catalog uses a different section. Two listings may land in one term when their CRNs differ.
 
 ### set_section
 
-`plan_id`, `term`, `subject`, `number`, `crn`, `expected_revision`. The course must already be in the term.
+`plan_id`, `term`, `subject`, `number`, `crn`, `expected_revision`. The course must already be in the term. This is the tool that changes a chosen section. One listing is updated to `crn`. When several listings share the subject and number, `set_section` fills the single listing that has no CRN, or does nothing when `crn` is already selected. A new CRN with several chosen sections is `invalid_argument` and does not retarget one of them. The plan is left unchanged, revision included, when that CRN is already selected.
 
 ### apply_reorganize
 

@@ -146,6 +146,78 @@ public sealed class PlanToolTests : IDisposable
     }
 
     [Fact]
+    public void RepeatedCoursesNeedDistinctCrnsAndSetSectionChangesOnlyOnePin()
+    {
+        var index = SharedCatalog.Library.ByCode["202710"];
+        var course = index.Courses.First(item => index.Sections(item.Key).Count >= 3);
+        var sections = index.Sections(course.Key);
+        var created = _write.create_plan("Topics", ["Fall 2026"]);
+        var id = (string)created["id"]!;
+        var revision = (int)created["revision"]!;
+
+        var first = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn);
+        revision = (int)first["revision"]!;
+        var again = Assert.Throws<ToolFailure>(() => _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision)));
+        Assert.Equal("invalid_argument", again.Code);
+        var same = Assert.Throws<ToolFailure>(() => _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn));
+        Assert.Equal("invalid_argument", same.Code);
+        Assert.Contains(sections[0].Crn, same.Message);
+        var second = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[1].Crn);
+        revision = (int)second["revision"]!;
+
+        var unchanged = _write.set_section(id, "Fall 2026", course.Subject, course.Number, sections[0].Crn, Rev(revision));
+        Assert.Equal(revision, (int)unchanged["revision"]!);
+        var alsoUnchanged = _write.set_section(id, "Fall 2026", course.Subject, course.Number, sections[1].Crn, Rev(revision));
+        Assert.Equal(revision, (int)alsoUnchanged["revision"]!);
+        var ambiguous = Assert.Throws<ToolFailure>(() => _write.set_section(id, "Fall 2026", course.Subject, course.Number, sections[2].Crn, Rev(revision)));
+        Assert.Equal("invalid_argument", ambiguous.Code);
+        var loaded = new UserDataStore(_path).DegreePlan(Guid.Parse(id))!;
+        Assert.Equal(
+            [sections[0].Crn, sections[1].Crn],
+            loaded.Terms.Single().Courses.Select(item => item.SelectedCrn).OrderBy(crn => crn, StringComparer.Ordinal));
+        var link = new UserDataStore(_path).Plans.Single(item => ScheduleLink.Owns(loaded.Id, item));
+        Assert.Single(link.Courses);
+        Assert.Equal(
+            [sections[0].Crn, sections[1].Crn],
+            link.SelectedCRNs.OrderBy(crn => crn, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void SetSectionReplacesTheOnlyPin()
+    {
+        var both = SharedCatalog.OfferedBoth;
+        var sections = SharedCatalog.Library.ByCode["202710"].Sections(both.Key);
+        var created = _write.create_plan("One section", ["Fall 2026"]);
+        var id = (string)created["id"]!;
+        var added = _write.add_course(id, "Fall 2026", both.Subject, both.Number, Rev(1));
+        var chosen = sections[0].Crn;
+        var selected = _write.set_section(id, "Fall 2026", both.Subject, both.Number, chosen, Rev((int)added["revision"]!));
+        Assert.True((int)selected["revision"]! > (int)added["revision"]!);
+        var course = new UserDataStore(_path).DegreePlan(Guid.Parse(id))!.Terms.Single().Courses.Single();
+        Assert.Equal(chosen, course.SelectedCrn);
+    }
+
+    [Fact]
+    public void ReorganizeKeepsAPinnedCrn()
+    {
+        var sample = SharedCatalog.SpringOnly;
+        var created = _write.create_plan("Pinned move", ["Fall 2026", "Spring 2027"]);
+        var id = Guid.Parse((string)created["id"]!);
+        var store = new UserDataStore(_path);
+        store.UpdateDegreePlan(id, plan =>
+        {
+            plan.Terms.Single(term => term.Season == PlanSeason.Fall).Courses.Add(
+                new DegreePlanCourse(sample.Key, sample.Title, sample.MinCredits) { SelectedCrn = "11111" });
+        });
+        var revision = PlanService.RevisionOf(new UserDataStore(_path).DegreePlan(id)!);
+        var applied = _write.apply_reorganize(id.ToString("D"), Rev(revision));
+        Assert.Contains((List<Dictionary<string, object?>>)applied["moves"]!, move => (string)move["to_term"]! == "202730");
+        var moved = new UserDataStore(_path).DegreePlan(id)!.Terms.Single(term => term.Season == PlanSeason.Spring).Courses.Single();
+        Assert.Equal(sample.Key, moved.Key);
+        Assert.Equal("11111", moved.SelectedCrn);
+    }
+
+    [Fact]
     public void UnknownCourseAndCrnAreRejected()
     {
         var created = _write.create_plan("Check", ["Fall 2026"]);

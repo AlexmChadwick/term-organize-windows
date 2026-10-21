@@ -100,6 +100,70 @@ public sealed class CatalogToolTests
     }
 
     [Fact]
+    public void SuggestScheduleLocksACrnAndKeepsDistinctListings()
+    {
+        var index = Library.ByCode["202710"];
+        Course? course = null;
+        CourseSection? first = null;
+        CourseSection? second = null;
+        foreach (var candidate in index.Courses)
+        {
+            var meetings = index.Sections(candidate.Key).Where(section => section.WeeklyMeetings.Any() && !section.IsOnline).ToList();
+            for (var i = 0; i < meetings.Count && first is null; i++)
+            {
+                for (var j = i + 1; j < meetings.Count; j++)
+                {
+                    if (ScheduleConflicts.Overlap(meetings[i], meetings[j]) is not null) continue;
+                    course = candidate;
+                    first = meetings[i];
+                    second = meetings[j];
+                    break;
+                }
+            }
+            if (first is not null) break;
+        }
+        Assert.NotNull(course);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        var sections = new[] { first, second };
+        var locked = _tools.suggest_schedule("202710", [new CourseRef { Subject = course.Subject, Number = course.Number, Crn = sections[0].Crn }]);
+        var schedules = (List<Dictionary<string, object?>>)locked["schedules"]!;
+        Assert.NotEmpty(schedules);
+        Assert.All(schedules, schedule =>
+        {
+            var picked = (List<Dictionary<string, object?>>)schedule["sections"]!;
+            Assert.Equal(sections[0].Crn, Assert.Single(picked)["crn"]);
+        });
+
+        var repeated = Assert.Throws<ToolFailure>(() => _tools.suggest_schedule("202710",
+        [
+            new CourseRef { Subject = course.Subject, Number = course.Number },
+            new CourseRef { Subject = course.Subject, Number = course.Number },
+        ]));
+        Assert.Equal("invalid_argument", repeated.Code);
+        var same = Assert.Throws<ToolFailure>(() => _tools.suggest_schedule("202710",
+        [
+            new CourseRef { Subject = course.Subject, Number = course.Number, Crn = sections[0].Crn },
+            new CourseRef { Subject = course.Subject, Number = course.Number, Crn = sections[0].Crn },
+        ]));
+        Assert.Equal("invalid_argument", same.Code);
+
+        var both = _tools.suggest_schedule("202710",
+        [
+            new CourseRef { Subject = course.Subject, Number = course.Number, Crn = sections[0].Crn },
+            new CourseRef { Subject = course.Subject, Number = course.Number, Crn = sections[1].Crn },
+        ]);
+        var paired = (List<Dictionary<string, object?>>)both["schedules"]!;
+        Assert.NotEmpty(paired);
+        Assert.All(paired, schedule =>
+        {
+            var crns = ((List<Dictionary<string, object?>>)schedule["sections"]!).Select(section => (string)section["crn"]!).ToHashSet(StringComparer.Ordinal);
+            Assert.Contains(sections[0].Crn, crns);
+            Assert.Contains(sections[1].Crn, crns);
+        });
+    }
+
+    [Fact]
     public void ReorganizeMovesACourseThatIsNotOffered()
     {
         var sample = SharedCatalog.SpringOnly;

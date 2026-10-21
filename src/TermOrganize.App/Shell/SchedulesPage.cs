@@ -267,17 +267,20 @@ public sealed class SchedulesPage : UserControl
             var crn = section.Crn;
             consider.Checked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(false, crn, key, plan));
             consider.Unchecked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(true, crn, key, plan));
+            var topics = index.Course(key)?.SpecialTopics == true;
             var onCalendar = new CheckBox { Content = "On the calendar", IsChecked = _plan!.SelectedCRNs.Contains(section.Crn) };
             onCalendar.Checked += (_, _) =>
             {
-                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan));
+                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan, replaceOtherSections: !topics));
                 ShowPlan();
             };
             onCalendar.Unchecked += (_, _) =>
             {
                 _session.Store.UpdatePlan(_plan!.Id, plan =>
                 {
-                    if (plan.SelectedCRNs.Contains(crn)) PlanEditing.SetSection(null, crns, plan);
+                    if (!plan.SelectedCRNs.Contains(crn)) return;
+                    if (topics) PlanEditing.ClearCrn(crn, plan);
+                    else PlanEditing.SetSection(null, crns, plan);
                 });
                 ShowPlan();
             };
@@ -325,15 +328,8 @@ public sealed class SchedulesPage : UserControl
     private void Generate(bool applyFirst = false)
     {
         if (_plan is null || _session.Index is null) return;
-        var inputs = _plan.Courses.Select(course => new ScheduleCourseInput
-        {
-            Key = course.Key,
-            IsRequired = course.IsRequired,
-            Sections = _session.Index.Sections(course.Key),
-            ExcludedCrns = course.ExcludedCRNs.ToList(),
-            MinCredits = _session.Index.Course(course.Key)?.MinCredits,
-            MaxCredits = _session.Index.Course(course.Key)?.MaxCredits,
-        }).ToList();
+        var index = _session.Index;
+        var inputs = ScheduleCourseInputs.Inputs(_plan, index);
         var result = ScheduleGenerator.Generate(inputs, _plan.Filters, _plan.Preferences);
         _results.Children.Clear();
         _results.Children.Add(Chrome.Heading(result.TotalFound == 0 ? "No schedules" : $"{result.TotalFound} schedules"));
@@ -347,7 +343,7 @@ public sealed class SchedulesPage : UserControl
             var crns = schedule.Crns.ToList();
             use.Click += (_, _) =>
             {
-                _session.Store.UpdatePlan(_plan.Id, plan => plan.SelectedCRNs = crns);
+                _session.Store.UpdatePlan(_plan.Id, plan => PlanEditing.ApplyGeneratedSchedule(crns, index, plan));
                 _window.RefreshUpNext();
                 ShowPlan();
             };
@@ -357,7 +353,7 @@ public sealed class SchedulesPage : UserControl
         if (applyFirst && result.Schedules.Count > 0)
         {
             var crns = result.Schedules[0].Crns.ToList();
-            _session.Store.UpdatePlan(_plan.Id, plan => plan.SelectedCRNs = crns);
+            _session.Store.UpdatePlan(_plan.Id, plan => PlanEditing.ApplyGeneratedSchedule(crns, index, plan));
             var selected = SelectedSections().ToList();
             _week.Show(selected, key => _plan.Course(key)?.ColorIndex ?? 0, _session.Store.Preferences.CalendarStartHour, _session.Store.Preferences.CalendarEndHour, _session.Store.Preferences.ShowWeekends);
         }

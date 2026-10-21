@@ -65,9 +65,24 @@ public sealed class CatalogToolTests
     {
         var (term, first, second) = SharedCatalog.Overlap;
         var result = _tools.check_schedule(term, [first, second, "99999"]);
+        var reported = (Dictionary<string, object?>)result["term"]!;
+        Assert.Equal(term, reported["term"]);
+        Assert.False(string.IsNullOrWhiteSpace((string)reported["name"]!));
         var clashes = (List<Dictionary<string, object?>>)result["clashes"]!;
         var unknown = (List<string>)result["unknown_crns"]!;
-        Assert.Contains(clashes, clash => (string)clash["crn_a"]! == first || (string)clash["crn_b"]! == first);
+        Assert.Contains(clashes, clash =>
+        {
+            var left = (string)clash["first"]!;
+            var right = (string)clash["second"]!;
+            return (left == first && right == second) || (left == second && right == first);
+        });
+        Assert.All(clashes, clash =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace((string)clash["reason"]!));
+            Assert.False(clash.ContainsKey("crn_a"));
+            Assert.False(clash.ContainsKey("crn_b"));
+            Assert.False(clash.ContainsKey("summary"));
+        });
         Assert.Contains("99999", unknown);
         Assert.DoesNotContain("\u2013", JsonSerializer.Serialize(clashes));
     }
@@ -104,7 +119,8 @@ public sealed class CatalogToolTests
         Assert.Contains(moves, move =>
             (string)move["subject"]! == sample.Subject
             && (string)move["number"]! == sample.Number
-            && (string)move["to_term"]! == "Spring 2027");
+            && (string)move["from_term"]! == "202710"
+            && (string)move["to_term"]! == "202730");
         var plan = (Dictionary<string, object?>)outcome["plan"]!;
         Assert.NotEmpty((List<Dictionary<string, object?>>)plan["terms"]!);
     }
@@ -150,6 +166,16 @@ public sealed class CatalogToolTests
         }));
         Assert.Equal("invalid_argument", error.Code);
         Assert.False(string.IsNullOrWhiteSpace(error.Message));
+    }
+
+    [Fact]
+    public void UnknownTermCourseAndCrnStayNotFound()
+    {
+        var term = Assert.Throws<ToolFailure>(() => _tools.check_schedule("209930", []));
+        Assert.Equal("not_found", term.Code);
+        var course = Assert.Throws<ToolFailure>(() => _tools.get_course("202730", "ZZZZ", "9999"));
+        Assert.Equal("not_found", course.Code);
+        Assert.False(string.IsNullOrWhiteSpace(course.Message));
     }
 
     [Fact]

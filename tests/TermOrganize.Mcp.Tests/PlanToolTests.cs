@@ -76,6 +76,8 @@ public sealed class PlanToolTests : IDisposable
         Assert.NotNull(new UserDataStore(_path).DegreePlan(plan.Id));
         var deleted = _write.delete_plan(id, Rev(revision), confirm: true);
         Assert.True((bool)deleted["deleted"]!);
+        Assert.Equal(id, deleted["plan_id"]);
+        Assert.False(deleted.ContainsKey("id"));
         Assert.Null(new UserDataStore(_path).DegreePlan(plan.Id));
     }
 
@@ -118,9 +120,29 @@ public sealed class PlanToolTests : IDisposable
         var added = _write.add_course(id, "Fall 2026", sample.Subject, sample.Number, Rev((int)created["revision"]!));
         var applied = _write.apply_reorganize(id, Rev((int)added["revision"]!));
         var moves = (List<Dictionary<string, object?>>)applied["moves"]!;
-        Assert.Contains(moves, move => (string)move["to_term"]! == "Spring 2027");
+        Assert.Contains(moves, move => (string)move["from_term"]! == "202710" && (string)move["to_term"]! == "202730");
         var loaded = new UserDataStore(_path).DegreePlan(Guid.Parse(id))!;
         Assert.Contains(loaded.Terms.Single(term => term.Season == PlanSeason.Spring).Courses, course => course.Key == sample.Key);
+    }
+
+    [Fact]
+    public void EmptyApplyReorganizeDoesNotRewriteOrBumpRevision()
+    {
+        var created = _write.create_plan("Algorithms", null);
+        var id = (string)created["id"]!;
+        Assert.Equal(1, (int)created["revision"]!);
+        var added = _write.add_course(id, "202730", "CS", "3000", Rev(1));
+        Assert.Equal(2, (int)added["revision"]!);
+        var validation = (Dictionary<string, object?>)added["validation"]!;
+        Assert.True(validation.ContainsKey("not_offered"));
+        var before = File.ReadAllBytes(_path);
+        var applied = _write.apply_reorganize(id, Rev(2));
+        Assert.Equal(2, (int)applied["revision"]!);
+        Assert.Empty((List<Dictionary<string, object?>>)applied["moves"]!);
+        Assert.Equal(before, File.ReadAllBytes(_path));
+        var loaded = new UserDataStore(_path).DegreePlan(Guid.Parse(id))!;
+        Assert.Equal(2, PlanService.RevisionOf(loaded));
+        Assert.Contains(loaded.Terms.Single().Courses, course => course.Key == new CourseKey("CS", "3000"));
     }
 
     [Fact]
@@ -132,6 +154,8 @@ public sealed class PlanToolTests : IDisposable
         var missing = Assert.Throws<ToolFailure>(() => _write.add_course(id, "Fall 2026", "ZZZZ", "9999", Rev(revision)));
         Assert.Equal("not_found", missing.Code);
         Assert.False(string.IsNullOrWhiteSpace(missing.Message));
+        var unknownTerm = Assert.Throws<ToolFailure>(() => _write.remove_course(id, "209930", "CS", "3000", Rev(revision)));
+        Assert.Equal("not_found", unknownTerm.Code);
         var both = SharedCatalog.OfferedBoth;
         Assert.Throws<ToolFailure>(() =>
             _write.add_course(id, "Fall 2026", both.Subject, both.Number, Rev(revision), "0000000"));

@@ -117,8 +117,8 @@ public static class PlanReorganizer
                 {
                     Subject = key.Subject,
                     Number = key.Number,
-                    FromTerm = term.Name,
-                    ToTerm = target.Name,
+                    FromTerm = TextFormat.BannerCode(term.Season, term.Year),
+                    ToTerm = TextFormat.BannerCode(target.Season, target.Year),
                     Reason = $"{why} {target.Name} offers it, and the move keeps prerequisite order without adding a semester.",
                 });
                 return true;

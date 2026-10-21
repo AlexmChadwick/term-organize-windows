@@ -115,12 +115,16 @@ public sealed class CatalogTools
         }
         return new Dictionary<string, object?>
         {
-            ["term"] = index.Term.Code,
+            ["term"] = new Dictionary<string, object?>
+            {
+                ["term"] = index.Term.Code,
+                ["name"] = TextFormat.Sanitize(index.Term.Name),
+            },
             ["clashes"] = ScheduleConflicts.Find(sections).Select(clash => new Dictionary<string, object?>
             {
-                ["crn_a"] = clash.First.Crn,
-                ["crn_b"] = clash.Second.Crn,
-                ["summary"] = TextFormat.Sanitize(clash.Summary.Replace('\u2013', '-').Replace('\u2014', '-')),
+                ["first"] = clash.First.Crn,
+                ["second"] = clash.Second.Crn,
+                ["reason"] = TextFormat.Sanitize(clash.Summary.Replace('\u2013', '-').Replace('\u2014', '-')),
             }).ToList(),
             ["unknown_crns"] = unknown,
         };

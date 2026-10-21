@@ -138,13 +138,22 @@ public sealed class PlanService
 
     public Dictionary<string, object?> ApplyReorganize(string planId, int? expectedRevision)
     {
-        ReorganizeOutcome? outcome = null;
-        var projected = Mutate(planId, expectedRevision, plan =>
+        var store = Open();
+        var plan = Require(store, planId);
+        CheckRevision(plan, expectedRevision);
+        var outcome = PlanReorganizer.Reorganize(plan, _library);
+        if (outcome.Moves.Count == 0)
         {
-            outcome = PlanReorganizer.Reorganize(plan, _library);
-            plan.Terms = outcome.Plan.Terms;
+            var unchanged = Project(plan);
+            unchanged["moves"] = new List<Dictionary<string, object?>>();
+            unchanged["unresolved"] = outcome.Unresolved;
+            return unchanged;
+        }
+        var projected = Mutate(planId, expectedRevision, stored =>
+        {
+            stored.Terms = outcome.Plan.Terms;
         });
-        projected["moves"] = outcome!.Moves.Select(MoveJson).ToList();
+        projected["moves"] = outcome.Moves.Select(MoveJson).ToList();
         projected["unresolved"] = outcome.Unresolved;
         return projected;
     }
@@ -180,7 +189,7 @@ public sealed class PlanService
         CheckRevision(plan, expectedRevision);
         store.Plans.RemoveAll(item => ScheduleLink.Owns(id, item));
         store.DeleteDegreePlan(id);
-        return new Dictionary<string, object?> { ["deleted"] = true, ["id"] = id.ToString("D") };
+        return new Dictionary<string, object?> { ["deleted"] = true, ["plan_id"] = id.ToString("D") };
     }
 
     public static int RevisionOf(DegreePlan plan) => Math.Max(plan.Revision, 1);
@@ -447,9 +456,9 @@ public sealed class PlanService
             {
                 clashes.Add(new Dictionary<string, object?>
                 {
-                    ["crn_a"] = clash.First.Crn,
-                    ["crn_b"] = clash.Second.Crn,
-                    ["summary"] = TextFormat.Sanitize(clash.Summary.Replace('\u2013', '-').Replace('\u2014', '-')),
+                    ["first"] = clash.First.Crn,
+                    ["second"] = clash.Second.Crn,
+                    ["reason"] = TextFormat.Sanitize(clash.Summary.Replace('\u2013', '-').Replace('\u2014', '-')),
                 });
             }
         }

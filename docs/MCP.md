@@ -184,8 +184,8 @@ No arguments.
 
 ```json
 {
-  "term": "202710",
-  "clashes": [ { "crn_a": "10001", "crn_b": "10002", "summary": "CS 3000 overlaps CS 3500" } ],
+  "term": { "term": "202710", "name": "Fall 2026" },
+  "clashes": [ { "first": "10001", "second": "10002", "reason": "CS 3000 overlaps CS 3500" } ],
   "unknown_crns": ["99999"]
 }
 ```
@@ -220,7 +220,7 @@ A course moves only into a term the plan already has. The target term's bundled 
 
 ```json
 {
-  "moves": [ { "subject": "CS", "number": "3000", "from_term": "Fall 2026", "to_term": "Spring 2027", "reason": "CS 3000 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester." } ],
+  "moves": [ { "subject": "CS", "number": "3000", "from_term": "202710", "to_term": "202730", "reason": "CS 3000 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester." } ],
   "unresolved": [ { "subject": "CS", "number": "1990", "reason": "CS 1990 is not offered in Fall 2026, and no other term already on the plan offers it." } ],
   "plan": { "terms": [ { "term": "202730", "name": "Spring 2027", "courses": [ { "subject": "CS", "number": "3000", "title": "Algorithms" } ] } ] }
 }
@@ -249,7 +249,7 @@ A course moves only into a term the plan already has. The target term's bundled 
 ```json
 {
   "validation": {
-    "clashes": [ { "crn_a": "10001", "crn_b": "10002", "summary": "overlap" } ],
+    "clashes": [ { "first": "10001", "second": "10002", "reason": "overlap" } ],
     "not_offered": [ { "subject": "CS", "number": "3000", "term": "Fall 2026" } ]
   }
 }
@@ -285,14 +285,14 @@ If the selected CRN is not a section of the course in the destination term, the 
 
 ### apply_reorganize
 
-`plan_id`, `expected_revision`. Destructive. Runs `reorganize_plan` and saves. Returns `get_plan` plus `moves` and `unresolved`.
+`plan_id`, `expected_revision`. Destructive. Runs `reorganize_plan` and saves when there is at least one move. `from_term` and `to_term` are Banner codes such as `202710` and `202730`. A result with no moves leaves the file and the revision unchanged. Returns `get_plan` plus `moves` and `unresolved`.
 
 ### delete_plan
 
 `plan_id`, `expected_revision`, `confirm`. Destructive. Refuses unless `confirm` is true.
 
 ```json
-{ "deleted": true, "id": "00000000-0000-0000-0000-000000000000" }
+{ "deleted": true, "plan_id": "00000000-0000-0000-0000-000000000000" }
 ```
 
 ## Annotations

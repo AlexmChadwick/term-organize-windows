@@ -8,30 +8,48 @@ public static class ScheduleCourseInputs
 {
     /// <summary>
     /// One search slot per plan course. Each manually selected CRN of that course is its own slot,
-    /// so two special-topics sections are not merged into one choice.
+    /// so two special-topics sections are not merged into one choice. A pin the catalog no longer
+    /// lists stays locked: that slot is empty and is reported unavailable, rather than opening every section.
     /// </summary>
     public static List<ScheduleCourseInput> Inputs(SchedulePlan plan, CatalogIndex index)
     {
         var result = new List<ScheduleCourseInput>();
+        var onlyCourse = plan.Courses.Count == 1 ? plan.Courses[0] : null;
         foreach (var planCourse in plan.Courses)
         {
             var course = index.Course(planCourse.Key);
             var sections = index.Sections(planCourse.Key);
-            var pins = new List<string>();
+            var resolved = new List<string>();
             foreach (var crn in plan.SelectedCRNs)
             {
                 var section = index.Section(crn);
                 if (section is null || section.CourseKey != planCourse.Key) continue;
-                if (pins.Contains(section.Crn)) continue;
-                pins.Add(section.Crn);
+                if (resolved.Contains(section.Crn)) continue;
+                resolved.Add(section.Crn);
             }
-            if (pins.Count == 0)
+            var rowPin = DegreeCourseRepeats.CleanCrn(planCourse.PinnedCrn);
+            var missingPins = new List<string>();
+            if (rowPin is null && resolved.Count == 0 && ReferenceEquals(planCourse, onlyCourse))
             {
-                result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null));
+                missingPins = plan.SelectedCRNs
+                    .Select(DegreeCourseRepeats.CleanCrn)
+                    .Where(crn => crn is not null && index.Section(crn!) is null)
+                    .Cast<string>()
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+            }
+            if (rowPin is not null && !resolved.Contains(rowPin))
+                result.Add(Locked(planCourse, course, rowPin));
+            foreach (var pin in missingPins)
+                result.Add(Locked(planCourse, course, pin));
+            if (resolved.Count > 0)
+            {
+                foreach (var pin in resolved)
+                    result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, pin));
                 continue;
             }
-            foreach (var pin in pins)
-                result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, pin));
+            if (rowPin is not null || missingPins.Count > 0) continue;
+            result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null));
         }
         return result;
     }
@@ -44,10 +62,18 @@ public static class ScheduleCourseInputs
         {
             if (course.Key is not CourseKey key) continue;
             var listed = index.Course(key);
-            result.Add(Input(key, true, index.Sections(key), [], listed, DegreeCourseRepeats.CleanCrn(course.SelectedCrn)));
+            var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+            var sections = index.Sections(key);
+            IReadOnlyList<CourseSection> usable = pin is null
+                ? sections
+                : sections.Where(section => string.Equals(section.Crn, pin, StringComparison.Ordinal)).ToList();
+            result.Add(Input(key, true, usable, [], listed, pin));
         }
         return result;
     }
+
+    private static ScheduleCourseInput Locked(PlanCourse planCourse, Course? course, string pin) =>
+        Input(planCourse.Key, planCourse.IsRequired, [], planCourse.ExcludedCRNs, course, pin);
 
     private static ScheduleCourseInput Input(
         CourseKey key,
@@ -213,6 +239,7 @@ public static class ScheduleReorderApplication
         IsRequired = course.IsRequired,
         ExcludedCRNs = new HashSet<string>(course.ExcludedCRNs, StringComparer.Ordinal),
         ColorIndex = course.ColorIndex,
+        PinnedCrn = course.PinnedCrn,
     };
 }
 
@@ -231,6 +258,7 @@ public static class SchedulePlanActions
                 IsRequired = entry.PlanCourse.IsRequired,
                 ExcludedCRNs = new HashSet<string>(entry.PlanCourse.ExcludedCRNs, StringComparer.Ordinal),
                 ColorIndex = entry.PlanCourse.ColorIndex,
+                PinnedCrn = entry.PlanCourse.PinnedCrn,
             },
             plan.Courses.FindIndex(c => c.Key == entry.Key) is var found && found >= 0 ? found : plan.Courses.Count,
             plan.SelectedCRNs.Where(crns.Contains).ToList(),

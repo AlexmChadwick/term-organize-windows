@@ -68,6 +68,47 @@ public class SectionPinTests
     }
 
     [Fact]
+    public void AMissingPinStaysLockedAndUnavailable()
+    {
+        var index = Index(
+            [Course("CS", "4973", topics: true), Course("MATH", "2331")],
+            [Section("22222", "CS", "4973", [3], 10, 11.5), Section("M1", "MATH", "2331", [2], 13, 14.5)]);
+        var plan = Schedule(["CS 4973"], ["11111"]);
+        var inputs = ScheduleCourseInputs.Inputs(plan, index);
+        var input = Assert.Single(inputs);
+        Assert.Equal("11111", input.PinnedCrn);
+        Assert.Empty(input.Sections);
+        var result = ScheduleGenerator.Generate(inputs, new ScheduleFilters());
+        Assert.Equal(0, result.TotalFound);
+        Assert.DoesNotContain(result.Schedules, schedule => schedule.Crns.Contains("22222"));
+        Assert.Equal("11111", result.Diagnostics.Courses[0].UnavailableCrn);
+        var reasons = ScheduleNoResultsText.Reasons(result.Diagnostics, "Fall 2026");
+        Assert.Equal(["CRN 11111 is unavailable"], reasons.Select(reason => reason.Title));
+        Assert.Equal("CS 4973 stays locked to that section.", reasons[0].Detail);
+        Assert.Equal(["11111"], plan.SelectedCRNs);
+
+        var withMath = Schedule(["CS 4973", "MATH 2331"], ["11111"]);
+        withMath.Courses[0].PinnedCrn = "11111";
+        var mixed = ScheduleCourseInputs.Inputs(withMath, index);
+        Assert.Equal(["11111", null], mixed.Select(item => item.PinnedCrn));
+        Assert.Empty(mixed[0].Sections);
+        Assert.Equal(["M1"], mixed[1].Sections.Select(section => section.Crn));
+        var mixedResult = ScheduleGenerator.Generate(mixed, new ScheduleFilters());
+        Assert.Equal(0, mixedResult.TotalFound);
+        Assert.DoesNotContain(mixedResult.Schedules, schedule => schedule.Crns.Contains("22222"));
+
+        var degree = ScheduleCourseInputs.ForDegreeCourses(
+            [new DegreePlanCourse(Topics, "Directed Study", 4) { SelectedCrn = "11111" }],
+            index);
+        Assert.Equal("11111", Assert.Single(degree).PinnedCrn);
+        Assert.Empty(degree[0].Sections);
+        var degreeResult = ScheduleGenerator.Generate(degree, new ScheduleFilters());
+        Assert.Equal(0, degreeResult.TotalFound);
+        Assert.Equal("11111", degreeResult.Diagnostics.Courses[0].UnavailableCrn);
+        Assert.DoesNotContain(degreeResult.Schedules, schedule => schedule.Crns.Contains("22222"));
+    }
+
+    [Fact]
     public void AnUnpinnedCourseStillOffersEverySection()
     {
         var index = TopicsIndex();

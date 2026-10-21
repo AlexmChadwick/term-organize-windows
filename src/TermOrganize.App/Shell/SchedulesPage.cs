@@ -271,7 +271,7 @@ public sealed class SchedulesPage : UserControl
             var onCalendar = new CheckBox { Content = "On the calendar", IsChecked = _plan!.SelectedCRNs.Contains(section.Crn) };
             onCalendar.Checked += (_, _) =>
             {
-                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan, replaceOtherSections: !topics));
+                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan, replaceOtherSections: !topics, courseKey: key));
                 ShowPlan();
             };
             onCalendar.Unchecked += (_, _) =>
@@ -280,7 +280,7 @@ public sealed class SchedulesPage : UserControl
                 {
                     if (!plan.SelectedCRNs.Contains(crn)) return;
                     if (topics) PlanEditing.ClearCrn(crn, plan);
-                    else PlanEditing.SetSection(null, crns, plan);
+                    else PlanEditing.SetSection(null, crns, plan, courseKey: key);
                 });
                 ShowPlan();
             };

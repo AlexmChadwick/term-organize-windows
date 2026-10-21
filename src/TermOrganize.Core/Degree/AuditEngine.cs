@@ -450,7 +450,7 @@ internal sealed class AuditEngine
         }
         var completed = counted.Values.Where(use => use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
         var planned = counted.Values.Where(use => !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
-        var (status, detail) = HoursStatus(completed, planned, required);
+        var (status, detail) = DegreeAudit.HoursStatus(completed, planned, required);
         return new DegreeAudit.NoteCheck
         {
             SectionId = sectionId,
@@ -605,7 +605,7 @@ internal sealed class AuditEngine
         var items = new List<DegreeAudit.NoteCheck.Item>();
         if (minimums.TotalHours is double total)
         {
-            var (status, detail) = HoursStatus(completed, planned, total);
+            var (status, detail) = DegreeAudit.HoursStatus(completed, planned, total);
             items.Add(new DegreeAudit.NoteCheck.Item
             {
                 Id = "total-hours",
@@ -673,7 +673,7 @@ internal sealed class AuditEngine
     {
         var completed = _pool.Values.Where(use => use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
         var planned = _pool.Values.Where(use => !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
-        var (status, detail) = HoursStatus(completed, planned, required);
+        var (status, detail) = DegreeAudit.HoursStatus(completed, planned, required);
         return new DegreeAudit.NoteCheck
         {
             SectionId = sectionId,
@@ -1375,17 +1375,6 @@ internal sealed class AuditEngine
         string.Join(" \u00b7 ", uses.Select(use => use.IsCompleted
             ? $"{use.Key} completed"
             : $"{use.Key} planned{(use.Semester is string semester ? $" \u00b7 {semester}" : "")}"));
-
-    private static (DegreeAudit.Status Status, string Detail) HoursStatus(double completed, double planned, double required)
-    {
-        var status = completed >= required ? DegreeAudit.Status.Complete
-            : completed + planned >= required ? DegreeAudit.Status.Planned
-            : completed + planned > 0 ? DegreeAudit.Status.Partial
-            : DegreeAudit.Status.Missing;
-        var detail = $"{DegreeAudit.HoursText(completed + planned)} of {DegreeAudit.HoursText(required)} semester hours";
-        if (planned > 0) detail += $" \u00b7 {DegreeAudit.HoursText(planned)} planned";
-        return (status, detail);
-    }
 
     private static string GpaText(double gpa)
     {

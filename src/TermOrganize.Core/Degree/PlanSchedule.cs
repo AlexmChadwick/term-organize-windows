@@ -52,7 +52,9 @@ public static class DegreePlanSchedule
         {
             if (course.Key is not CourseKey key || !schedule.Contains(key)) continue;
             var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
-            if (pin is null || schedule.SelectedCRNs.Contains(pin)) continue;
+            if (pin is null) continue;
+            if (schedule.Course(key) is PlanCourse row && string.IsNullOrWhiteSpace(row.PinnedCrn)) row.PinnedCrn = pin;
+            if (schedule.SelectedCRNs.Contains(pin)) continue;
             schedule.SelectedCRNs.Add(pin);
             added++;
         }

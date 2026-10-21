@@ -287,13 +287,13 @@ public class DegreeNUpathTests
             ?? throw new InvalidOperationException("universitywide");
         Assert.Equal(["total-hours", "gpa", "residency"], check.Items.Select(item => item.Id));
         Assert.Equal(DegreeAudit.Status.Partial, check.Items[0].Status);
-        Assert.Equal("44 of 128 semester hours \u00b7 12 planned", check.Items[0].Detail);
+        Assert.Equal("32 of 128 semester hours \u00b7 12 planned", check.Items[0].Detail);
         Assert.Null(check.Items[1].Status);
         Assert.Equal("Not checked: plans don\u2019t include grades", check.Items[1].Detail);
         Assert.Null(check.Items[2].Status);
         Assert.Equal(DegreeAudit.Status.Partial, check.Status);
         Assert.True(check.Counts);
-        Assert.Equal("44 of 128 semester hours \u00b7 12 planned \u00b7 GPA and residency not checked", check.Detail);
+        Assert.Equal("32 of 128 semester hours \u00b7 12 planned \u00b7 GPA and residency not checked", check.Detail);
 
         var unread = DegreeAudit.Run(Plan(), Requirements(), attributes: CourseAttributes());
         Assert.DoesNotContain(unread.NoteChecks, item => item.CheckKind is DegreeAudit.NoteCheck.Kind.Universitywide);
@@ -306,7 +306,106 @@ public class DegreeNUpathTests
         var check = audit.NoteChecks.FirstOrDefault(item => item.CheckKind is DegreeAudit.NoteCheck.Kind.TotalHours)
             ?? throw new InvalidOperationException("total");
         Assert.Equal(DegreeAudit.Status.Partial, check.Status);
-        Assert.Equal("44 of 134 semester hours \u00b7 12 planned", check.Detail);
+        Assert.Equal("32 of 134 semester hours \u00b7 12 planned", check.Detail);
+    }
+
+    /// <summary>
+    /// 105 earned and 30 planned. The header already said "105 of 134 credits done · 30 planned".
+    /// The universitywide line was showing 105 + 30 in the first number and the 30 again.
+    /// Every hours line uses <see cref="DegreeAudit.HoursStatus"/>: the first number is completed credits only.
+    /// </summary>
+    [Fact]
+    public void HoursLinesKeepCompletedSeparateFromPlanned()
+    {
+        AssertHours(105, 30, 128, DegreeAudit.Status.Planned, "105 of 128 semester hours \u00b7 30 planned");
+        AssertHours(105, 30, 134, DegreeAudit.Status.Planned, "105 of 134 semester hours \u00b7 30 planned");
+        AssertHours(60, 22, 72, DegreeAudit.Status.Planned, "60 of 72 semester hours \u00b7 22 planned");
+        AssertHours(128, 0, 128, DegreeAudit.Status.Complete, "128 of 128 semester hours");
+        AssertHours(140, 10, 128, DegreeAudit.Status.Complete, "140 of 128 semester hours \u00b7 10 planned");
+        AssertHours(90, 20, 128, DegreeAudit.Status.Partial, "90 of 128 semester hours \u00b7 20 planned");
+        AssertHours(0, 0, 128, DegreeAudit.Status.Missing, "0 of 128 semester hours");
+        AssertHours(0, 128, 128, DegreeAudit.Status.Planned, "0 of 128 semester hours \u00b7 128 planned");
+
+        var page = """
+            <div id="programrequirementstextcontainer" class="tab_content">
+            <h2>Universitywide Requirements</h2>
+            <p>All undergraduate students are required to complete the Universitywide Requirements.</p>
+            <h2>Major Requirements</h2>
+            <table class="sc_courselist"><tbody>
+            <tr class="even firstrow"><td class="codecol"><a class="bubblelink code">CS&#160;3000</a></td><td>Algorithms</td><td class="hourscol">4</td></tr>
+            <tr class="odd"><td colspan="2"><span class="courselistcomment">Complete 8 semester hours of CS classes. Choose courses within the following ranges:</span></td><td class="hourscol">8</td></tr>
+            <tr class="even lastrow"><td colspan="2"><div style="margin-left:20px;" class="blockindent"><span class="courselistcomment commentindent"><a class="bubblelink code">CS&#160;2500</a> or higher</span></div></td><td class="hourscol"></td></tr>
+            </tbody></table>
+            <h2>Writing Requirement</h2>
+            <table class="sc_courselist"><tbody>
+            <tr class="even firstrow lastrow"><td class="codecol"><a class="bubblelink code">ENGW&#160;1111</a></td><td>First-Year Writing</td><td class="hourscol">4</td></tr>
+            </tbody></table>
+            <h2>Required General Electives</h2>
+            <table class="sc_courselist"><tbody>
+            <tr class="even lastrow firstrow"><td colspan="2"><span class="courselistcomment">Complete 4 semester hours of general electives.</span></td><td class="hourscol">4</td></tr>
+            </tbody></table>
+            <h2>Credit Requirement</h2>
+            <p>Complete 72 semester hours in the major.</p>
+            <h2>Program Requirement</h2>
+            <p>134 total semester hours required</p>
+            </div>
+            """;
+        var requirements = ProgramCatalogParser.Requirements(page, new CatalogYear(2024), Program)
+            ?? throw new InvalidOperationException("page");
+        requirements.Universitywide = new UniversitywideRequirements
+        {
+            TotalHours = 128,
+            Gpa = 2,
+            ResidencyHours = 64,
+            FetchedAt = DateTimeOffset.UtcNow,
+        };
+        var plan = new DegreePlan { Name = "BS CS" };
+        plan.Completed =
+        [
+            Course("CS 3000", 40),
+            Course("CS 2500", 20),
+            Course("ENGW 1111", 4),
+            Course("PHIL 1102", 41),
+        ];
+        plan.Terms =
+        [
+            new DegreePlanTerm
+            {
+                Season = PlanSeason.Spring,
+                Year = 2027,
+                Courses = [Course("CS 3500", 22), Course("MKTG 2201", 8)],
+            },
+        ];
+
+        var audit = DegreeAudit.Run(plan, requirements);
+        Assert.Equal(105, audit.CompletedHours);
+        Assert.Equal(30, audit.PlannedHours);
+        Assert.Equal(134, audit.RequiredHours);
+        Assert.Equal("105 of 134 credits done \u00b7 30 planned", DegreeRequirementText.CreditsLine(audit));
+
+        var university = audit.NoteChecks.FirstOrDefault(item => item.CheckKind is DegreeAudit.NoteCheck.Kind.Universitywide)
+            ?? throw new InvalidOperationException("universitywide");
+        Assert.Equal(DegreeAudit.Status.Planned, university.Status);
+        Assert.Equal(DegreeAudit.Status.Planned, university.Items[0].Status);
+        Assert.Equal("105 of 128 semester hours \u00b7 30 planned", university.Items[0].Detail);
+        Assert.Equal("105 of 128 semester hours \u00b7 30 planned \u00b7 GPA and residency not checked", university.Detail);
+
+        var total = audit.NoteChecks.FirstOrDefault(item => item.CheckKind is DegreeAudit.NoteCheck.Kind.TotalHours)
+            ?? throw new InvalidOperationException("total");
+        Assert.Equal(DegreeAudit.Status.Planned, total.Status);
+        Assert.Equal("105 of 134 semester hours \u00b7 30 planned", total.Detail);
+
+        var major = audit.NoteChecks.FirstOrDefault(item => item.CheckKind is DegreeAudit.NoteCheck.Kind.MajorHours)
+            ?? throw new InvalidOperationException("major");
+        Assert.Equal(DegreeAudit.Status.Planned, major.Status);
+        Assert.Equal("60 of 72 semester hours \u00b7 22 planned", major.Detail);
+    }
+
+    static void AssertHours(double completed, double planned, double required, DegreeAudit.Status status, string detail)
+    {
+        var line = DegreeAudit.HoursStatus(completed, planned, required);
+        Assert.Equal(status, line.Status);
+        Assert.Equal(detail, line.Detail);
     }
 
     [Fact]

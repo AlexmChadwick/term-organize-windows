@@ -81,7 +81,9 @@ public static class ScheduleNoResultsText
         parts.Add(option.IsLowerBound ? $"{count}+ {noun}" : $"{count} {noun}");
         foreach (var key in option.Courses)
         {
-            if (blockers.NotOffered.Contains(key)) parts.Add($"{key} isn\u2019t offered in {termName}");
+            var missing = blockers.Unavailable.FirstOrDefault(item => item.Key == key);
+            if (missing is not null) parts.Add($"CRN {missing.Crn} is unavailable");
+            else if (blockers.NotOffered.Contains(key)) parts.Add($"{key} isn\u2019t offered in {termName}");
             else if (blockers.FilteredOut.Contains(key)) parts.Add($"your rules rule out every {key} section");
         }
         if (option.Courses.Count == 1)
@@ -106,7 +108,17 @@ public static class ScheduleNoResultsText
     public static List<Reason> Reasons(ScheduleDiagnostics diagnostics, string termName)
     {
         var result = new List<Reason>();
-        foreach (var report in diagnostics.Courses.Where(r => r.IsBlocked && r.IsRequired))
+        foreach (var report in diagnostics.Courses)
+        {
+            if (!report.IsBlocked || string.IsNullOrEmpty(report.UnavailableCrn)) continue;
+            result.Add(new Reason
+            {
+                Symbol = "exclamationmark.triangle",
+                Title = $"CRN {report.UnavailableCrn} is unavailable",
+                Detail = $"{report.Key} stays locked to that section.",
+            });
+        }
+        foreach (var report in diagnostics.Courses.Where(r => r.IsBlocked && r.IsRequired && string.IsNullOrEmpty(r.UnavailableCrn)))
         {
             if (report.TotalSections == 0)
             {
@@ -187,7 +199,7 @@ public static class ScheduleNoResultsText
                 break;
         }
 
-        foreach (var report in diagnostics.Courses.Where(r => r.IsBlocked && !r.IsRequired && r.TotalSections > 0))
+        foreach (var report in diagnostics.Courses.Where(r => r.IsBlocked && !r.IsRequired && string.IsNullOrEmpty(r.UnavailableCrn) && r.TotalSections > 0))
         {
             result.Add(new Reason
             {

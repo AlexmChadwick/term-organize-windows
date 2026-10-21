@@ -32,7 +32,10 @@ internal static class DegreePlanCopy
     };
 
     public static DegreePlanCourse CloneCourse(DegreePlanCourse course) =>
-        new(course.Key, course.Title, course.Credits, course.Label, course.Id);
+        new(course.Key, course.Title, course.Credits, course.Label, course.Id)
+        {
+            SelectedCrn = course.SelectedCrn,
+        };
 
     public static DegreePlanTerm CloneTerm(DegreePlanTerm term) => new()
     {
@@ -74,19 +77,29 @@ public static class DegreePlanEditing
     public static void RemoveCompletedCourse(Guid courseId, DegreePlan plan) =>
         plan.Completed.RemoveAll(course => course.Id == courseId);
 
-    public static void Add(DegreePlanCourse course, Guid termId, DegreePlan plan)
+    public static bool Add(DegreePlanCourse course, Guid termId, DegreePlan plan)
     {
+        if (!CanPlace(course, plan)) return false;
         var term = plan.Terms.FirstOrDefault(item => item.Id == termId);
-        term?.Courses.Add(course);
+        if (term is null) return false;
+        term.Courses.Add(course);
+        return true;
     }
 
     /// <summary>Appends a course to the plan's semester for that season and year, adding the semester first when needed.</summary>
-    public static void AddCourse(DegreePlanCourse course, DegreePlanTerm semester, DegreePlan plan)
+    public static bool AddCourse(DegreePlanCourse course, DegreePlanTerm semester, DegreePlan plan)
     {
+        if (!CanPlace(course, plan)) return false;
         AddTerm(semester, plan);
         var term = plan.Terms.FirstOrDefault(item => item.Season == semester.Season && item.Year == semester.Year);
-        term?.Courses.Add(course);
+        if (term is null) return false;
+        term.Courses.Add(course);
+        return true;
     }
+
+    /// <summary>A repeated subject and number is placed only when each listing has a different manual CRN.</summary>
+    private static bool CanPlace(DegreePlanCourse course, DegreePlan plan) =>
+        course.Key is not CourseKey key || DegreeCourseEntries.Allows(plan, key, course.SelectedCrn);
 
     public static void ReplacePlannedCourse(Guid courseId, DegreePlanCourse replacement, DegreePlan plan)
     {
@@ -126,7 +139,7 @@ public static class DegreePlanEditing
     {
         var moved = TakePlannedCourse(courseId, plan);
         if (moved is null) return;
-        if (moved.Key is CourseKey key && plan.CompletedKeys.Contains(key)) return;
+        if (moved.Key is CourseKey key && !DegreeCourseEntries.Allows(plan, key, moved.SelectedCrn)) return;
         plan.Completed.Add(moved);
     }
 

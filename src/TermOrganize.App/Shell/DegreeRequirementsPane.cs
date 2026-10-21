@@ -428,12 +428,15 @@ internal sealed class DegreeRequirementsPane : UserControl
         var targets = DegreeRequirementsLookup.AddTargets(_plan);
         if (targets.Count == 0) return;
         var term = targets[0];
+        var added = false;
         _session.Store.UpdateDegreePlan(_plan.Id, plan =>
         {
             var destination = plan.Terms.FirstOrDefault(item => item.Season == term.Season && item.Year == term.Year) ?? term;
-            DegreePlanEditing.AddCourse(new DegreePlanCourse(key, title, credits), destination, plan);
+            added = DegreePlanEditing.AddCourse(new DegreePlanCourse(key, title, credits), destination, plan);
         });
-        _window.SetStatus($"Added {key} to {term.Name}.");
+        _window.SetStatus(added
+            ? $"Added {key} to {term.Name}."
+            : $"{key} is already on this plan. A second listing needs its own CRN.");
         PaintAudit();
         _onEdited?.Invoke();
     }

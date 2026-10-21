@@ -345,8 +345,10 @@ public sealed class DegreePage : UserControl
             if (_plan is null || CourseKey.Parse(add.Text) is not CourseKey key || termBox.SelectedItem is not TermChoice choice) return;
             var title = _session.Index?.Course(key)?.Title ?? "";
             var credits = _session.Index?.Course(key)?.MaxCredits ?? 4;
+            var added = false;
             _session.Store.UpdateDegreePlan(_plan.Id, plan =>
-                DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
+                added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
+            if (!added) _window.SetStatus($"{key} is already on this plan. A second listing needs its own CRN.");
             ShowPlan();
         };
         var row = new WrapLayout { Spacing = 8 };
@@ -444,7 +446,13 @@ public sealed class DegreePage : UserControl
             if (course.Key is not CourseKey key) continue;
             if (_session.Store.AddCourse(key, schedule.Id)) added++;
         }
-        _window.SetStatus(added == 0 ? "Those courses are already on the schedule." : $"Added {added} courses to {schedule.Name}.");
+        var pins = 0;
+        _session.Store.UpdatePlan(schedule.Id, plan => pins = DegreePlanSchedule.CopyPins(plan, match.Courses));
+        _window.SetStatus(added == 0 && pins == 0
+            ? "Those courses are already on the schedule."
+            : pins > 0 && added == 0
+                ? $"Added the selected sections to {schedule.Name}."
+                : $"Added {added} courses to {schedule.Name}.");
     }
 
     private static void AcceptDegreeDrag(object sender, DragEventArgs args)

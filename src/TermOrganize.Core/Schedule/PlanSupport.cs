@@ -27,12 +27,55 @@ public static partial class PlanEditing
         return $"Plan {n}";
     }
 
-    /// <summary>Chooses <paramref name="crn"/> for a course, replacing whichever of its sections was selected. Null clears it.</summary>
-    public static void SetSection(string? crn, ISet<string> courseCrns, SchedulePlan plan)
+    /// <summary>
+    /// Chooses <paramref name="crn"/> for a course. By default this replaces the course's other sections.
+    /// Special topics pass <paramref name="replaceOtherSections"/> false so a second CRN stays selected.
+    /// Null clears every section in <paramref name="courseCrns"/> when replacing, and does nothing otherwise.
+    /// </summary>
+    public static void SetSection(string? crn, ISet<string> courseCrns, SchedulePlan plan, bool replaceOtherSections = true)
     {
-        plan.SelectedCRNs.RemoveAll(courseCrns.Contains);
+        if (replaceOtherSections) plan.SelectedCRNs.RemoveAll(courseCrns.Contains);
+        else if (crn is null) return;
         if (crn is not null && !plan.SelectedCRNs.Contains(crn)) plan.SelectedCRNs.Add(crn);
     }
+
+    /// <summary>Removes one selected CRN and leaves every other pin in place.</summary>
+    public static void ClearCrn(string crn, SchedulePlan plan) =>
+        plan.SelectedCRNs.RemoveAll(item => string.Equals(item, crn, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Keeps every CRN the user already chose. A generated section is added only for a course
+    /// that has no pin. A generated alternate of a pinned course is ignored. A CRN the catalog
+    /// does not know stays.
+    /// </summary>
+    public static void ApplyGeneratedSchedule(IReadOnlyList<string> generatedCrns, CatalogIndex? index, SchedulePlan plan)
+    {
+        if (index is null) return;
+        var kept = new List<string>(plan.SelectedCRNs);
+        var pinnedKeys = new HashSet<CourseKey>();
+        foreach (var crn in plan.SelectedCRNs)
+        {
+            if (index.Section(crn) is CourseSection section) pinnedKeys.Add(section.CourseKey);
+        }
+        foreach (var crn in generatedCrns)
+        {
+            if (kept.Contains(crn)) continue;
+            var section = index.Section(crn);
+            if (section is null) continue;
+            if (pinnedKeys.Contains(section.CourseKey)) continue;
+            if (!plan.Courses.Any(course => course.Key == section.CourseKey)) continue;
+            kept.Add(crn);
+            pinnedKeys.Add(section.CourseKey);
+        }
+        plan.SelectedCRNs = kept;
+    }
+
+    /// <summary>
+    /// Selected CRNs after a catalog refresh. Identity is the CRN itself: a missing section
+    /// is not replaced by another section of the same course number.
+    /// </summary>
+    public static List<string> PinsAfterRefresh(IReadOnlyList<string> selected, CatalogIndex index) =>
+        selected.Select(crn => index.Section(crn)?.Crn ?? crn).ToList();
 
     public static void SetRequired(bool isRequired, CourseKey key, SchedulePlan plan)
     {
@@ -395,8 +438,9 @@ public sealed class ResolvedPlan
         foreach (var entry in entries.Where(entry => entry.CountsTowardsCredits))
         {
             if (entry.Course is null) continue;
-            low += entry.Course.MinCredits;
-            high += entry.Course.MaxCredits;
+            var copies = Math.Max(1, entry.Selected.Count);
+            low += entry.Course.MinCredits * copies;
+            high += entry.Course.MaxCredits * copies;
         }
         Credits = (low, high);
     }

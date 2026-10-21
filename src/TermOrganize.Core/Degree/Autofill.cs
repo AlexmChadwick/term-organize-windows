@@ -171,7 +171,6 @@ public static class DegreePlanAutofill
             }
         }
 
-        var done = draft.CompletedKeys;
         foreach (var plan in schedulePlans)
         {
             if (!plan.IsPrimary || plan.Courses.Count == 0) continue;
@@ -186,16 +185,32 @@ public static class DegreePlanAutofill
                 draft.Terms.Add(new DegreePlanTerm { Season = season, Year = banner.CalendarYear });
                 termPosition = draft.Terms.Count - 1;
             }
-            var present = draft.Terms[termPosition].Courses.Select(course => course.Key).OfType<CourseKey>().ToHashSet();
             foreach (var planCourse in plan.Courses)
             {
-                if (present.Contains(planCourse.Key) || done.Contains(planCourse.Key)) continue;
                 var course = index?.Course(planCourse.Key);
-                draft.Terms[termPosition].Courses.Add(new DegreePlanCourse(
-                    planCourse.Key,
-                    DegreePlanFormat.ExportTitle(course?.Title ?? planCourse.Key.ToString()),
-                    course?.MaxCredits ?? 4));
-                present.Add(planCourse.Key);
+                var title = DegreePlanFormat.ExportTitle(course?.Title ?? planCourse.Key.ToString());
+                var credits = course?.MaxCredits ?? 4;
+                var pins = new List<string>();
+                if (index is not null)
+                {
+                    foreach (var crn in plan.SelectedCRNs)
+                    {
+                        var section = index.Section(crn);
+                        if (section is null || section.CourseKey != planCourse.Key || pins.Contains(section.Crn)) continue;
+                        pins.Add(section.Crn);
+                    }
+                }
+                if (pins.Count == 0)
+                {
+                    if (!DegreeCourseEntries.Allows(draft, planCourse.Key, null)) continue;
+                    draft.Terms[termPosition].Courses.Add(new DegreePlanCourse(planCourse.Key, title, credits));
+                    continue;
+                }
+                foreach (var crn in pins)
+                {
+                    if (!DegreeCourseEntries.Allows(draft, planCourse.Key, crn)) continue;
+                    draft.Terms[termPosition].Courses.Add(new DegreePlanCourse(planCourse.Key, title, credits) { SelectedCrn = crn });
+                }
             }
         }
         draft.SortTerms();

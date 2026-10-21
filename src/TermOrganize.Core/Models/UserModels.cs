@@ -225,6 +225,9 @@ public sealed class DegreePlanCourse
     public string Title { get; set; } = "";
     public double Credits { get; set; }
 
+    /// <summary>Section chosen for this course. A second listing of the same subject and number is kept only when every listing has its own CRN.</summary>
+    public string? SelectedCrn { get; set; }
+
     public DegreePlanCourse() { }
 
     public DegreePlanCourse(CourseKey? key, string title, double credits, string? label = null, Guid? id = null)

@@ -94,6 +94,13 @@ public sealed class ScheduleCourseInput
 
     public double? MinCredits { get; set; }
     public double? MaxCredits { get; set; }
+
+    /// <summary>
+    /// When set, this slot may use only that CRN. Another section of the same course is not a substitute,
+    /// including when the pinned section is filtered out.
+    /// </summary>
+    public string? PinnedCrn { get; set; }
+
     public CourseKey Id => Key;
 
     /// <summary>Whole credits the search uses. Null credits count as 0; a fractional credit rounds up.</summary>
@@ -122,6 +129,7 @@ public sealed class ScheduleCourseInput
         ExcludedCRNs = ExcludedCRNs.ToList(),
         MinCredits = MinCredits,
         MaxCredits = MaxCredits,
+        PinnedCrn = PinnedCrn,
     };
 }
 
@@ -669,6 +677,9 @@ public static partial class ScheduleGenerator
                     }
                 }
             }
+            var pin = string.IsNullOrWhiteSpace(course.PinnedCrn) ? null : course.PinnedCrn.Trim();
+            if (pin is not null)
+                remaining.RemoveAll(section => !string.Equals(section.Crn, pin, StringComparison.Ordinal));
             kept.Add(remaining);
             reports.Add(new ScheduleDiagnostics.CourseReport
             {

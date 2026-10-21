@@ -86,6 +86,7 @@ internal sealed class AuditEngine
                 Credits = course.Credits,
                 Semester = semester,
                 Order = currentOrder,
+                SelectedCrn = DegreeCourseRepeats.CleanCrn(course.SelectedCrn),
             };
             var earlier = _instances.TryGetValue(key, out var prior)
                 ? prior.Select(id => _pool[id]).ToList()
@@ -1348,6 +1349,7 @@ internal sealed class AuditEngine
         _effective.GetValueOrDefault(rule.Id) is Effective.KindEffective { RuleKind: RequirementKind.Choose { Count: not null } };
 
     private static bool CountsSeparately(DegreeAudit.CourseUse a, DegreeAudit.CourseUse b) =>
+        DegreeCourseRepeats.DistinctManualCrns(a.SelectedCrn, b.SelectedCrn) ||
         DegreeCourseRepeats.CountsSeparately(a.Title, a.Credits, b.Title, b.Credits);
 
     private static bool IsCoop(DegreeAudit.CourseUse use) =>

@@ -32,16 +32,25 @@ public static partial class PlanEditing
     /// Special topics pass <paramref name="replaceOtherSections"/> false so a second CRN stays selected.
     /// Null clears every section in <paramref name="courseCrns"/> when replacing, and does nothing otherwise.
     /// </summary>
-    public static void SetSection(string? crn, ISet<string> courseCrns, SchedulePlan plan, bool replaceOtherSections = true)
+    public static void SetSection(string? crn, ISet<string> courseCrns, SchedulePlan plan, bool replaceOtherSections = true, CourseKey? courseKey = null)
     {
         if (replaceOtherSections) plan.SelectedCRNs.RemoveAll(courseCrns.Contains);
         else if (crn is null) return;
         if (crn is not null && !plan.SelectedCRNs.Contains(crn)) plan.SelectedCRNs.Add(crn);
+        if (courseKey is CourseKey key && plan.Course(key) is PlanCourse row)
+        {
+            if (replaceOtherSections) row.PinnedCrn = string.IsNullOrWhiteSpace(crn) ? null : crn.Trim();
+            else if (string.IsNullOrWhiteSpace(row.PinnedCrn)) row.PinnedCrn = crn!.Trim();
+        }
     }
 
     /// <summary>Removes one selected CRN and leaves every other pin in place.</summary>
-    public static void ClearCrn(string crn, SchedulePlan plan) =>
+    public static void ClearCrn(string crn, SchedulePlan plan)
+    {
         plan.SelectedCRNs.RemoveAll(item => string.Equals(item, crn, StringComparison.Ordinal));
+        foreach (var course in plan.Courses)
+            if (string.Equals(course.PinnedCrn, crn, StringComparison.Ordinal)) course.PinnedCrn = null;
+    }
 
     /// <summary>
     /// Keeps every CRN the user already chose. A generated section is added only for a course
@@ -53,6 +62,8 @@ public static partial class PlanEditing
         if (index is null) return;
         var kept = new List<string>(plan.SelectedCRNs);
         var pinnedKeys = new HashSet<CourseKey>();
+        foreach (var course in plan.Courses)
+            if (!string.IsNullOrWhiteSpace(course.PinnedCrn)) pinnedKeys.Add(course.Key);
         foreach (var crn in plan.SelectedCRNs)
         {
             if (index.Section(crn) is CourseSection section) pinnedKeys.Add(section.CourseKey);

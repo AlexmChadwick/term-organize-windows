@@ -217,6 +217,25 @@ public sealed partial class DegreeAudit
         return null;
     }
 
+    /// <summary>
+    /// How a semester-hour minimum stands, for the university minimum, the program total,
+    /// and hours in the major. The line is <c>completed of required semester hours</c>,
+    /// then <c> · N planned</c> when planned credits are above zero. The first number
+    /// is credits already earned. It is not completed plus planned.
+    /// Complete when completed meets the requirement, planned when the rest is in a later term,
+    /// partial when some credits count and the sum is still short, and missing when both are zero.
+    /// </summary>
+    public static (Status Status, string Detail) HoursStatus(double completed, double planned, double required)
+    {
+        var status = completed >= required ? Status.Complete
+            : completed + planned >= required ? Status.Planned
+            : completed + planned > 0 ? Status.Partial
+            : Status.Missing;
+        var detail = $"{HoursText(completed)} of {HoursText(required)} semester hours";
+        if (planned > 0) detail += $" \u00b7 {HoursText(planned)} planned";
+        return (status, detail);
+    }
+
     internal static string HoursText(double value)
     {
         var rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);

@@ -60,6 +60,11 @@ public sealed class PlanCourse
     public bool IsRequired { get; set; } = true;
     public HashSet<string> ExcludedCRNs { get; set; } = [];
     public int ColorIndex { get; set; }
+    /// <summary>
+    /// The section chosen for this row. It stays set when that CRN leaves the catalog,
+    /// so generation can keep the row locked instead of offering every other section.
+    /// </summary>
+    public string? PinnedCrn { get; set; }
     [JsonIgnore] public CourseKey Id => Key;
 }
 

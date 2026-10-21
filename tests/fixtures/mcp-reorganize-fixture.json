@@ -1,0 +1,54 @@
+{
+  "plan": {
+    "terms": [
+      {
+        "term": "202710",
+        "courses": [
+          { "subject": "CS", "number": "4805" },
+          { "subject": "CS", "number": "2535" },
+          { "subject": "CS", "number": "2700" },
+          { "subject": "CS", "number": "4130" },
+          { "subject": "CS", "number": "2701" }
+        ]
+      },
+      { "term": "202730", "courses": [] }
+    ]
+  },
+  "moves": [
+    {
+      "subject": "CS",
+      "number": "4805",
+      "from_term": "Fall 2026",
+      "to_term": "Spring 2027",
+      "reason": "CS 4805 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester."
+    },
+    {
+      "subject": "CS",
+      "number": "2535",
+      "from_term": "Fall 2026",
+      "to_term": "Spring 2027",
+      "reason": "CS 2535 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester."
+    },
+    {
+      "subject": "CS",
+      "number": "2700",
+      "from_term": "Fall 2026",
+      "to_term": "Spring 2027",
+      "reason": "CS 2700 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester."
+    },
+    {
+      "subject": "CS",
+      "number": "4130",
+      "from_term": "Fall 2026",
+      "to_term": "Spring 2027",
+      "reason": "CS 4130 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester."
+    },
+    {
+      "subject": "CS",
+      "number": "2701",
+      "from_term": "Fall 2026",
+      "to_term": "Spring 2027",
+      "reason": "CS 2701 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester."
+    }
+  ]
+}

@@ -19,4 +19,7 @@
     <ProjectReference Include="..\..\src\TermOrganize.Mcp\TermOrganize.Mcp.csproj" />
     <ProjectReference Include="..\..\src\TermOrganize.Core\TermOrganize.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\tests\fixtures\mcp-reorganize-fixture.json" Link="fixtures\mcp-reorganize-fixture.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

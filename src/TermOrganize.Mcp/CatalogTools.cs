@@ -11,8 +11,13 @@ namespace TermOrganize.Mcp;
 public sealed class CatalogTools
 {
     private readonly CatalogLibrary _library;
+    private readonly PlanService _plans;
 
-    public CatalogTools(CatalogLibrary library) => _library = library;
+    public CatalogTools(CatalogLibrary library, PlanService plans)
+    {
+        _library = library;
+        _plans = plans;
+    }
 
     [McpServerTool(Name = "list_terms", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
     [Description("Lists the bundled term codes and names. This server does not contact Banner.")]
@@ -22,7 +27,7 @@ public sealed class CatalogTools
             .OrderBy(catalog => catalog.Term.Code, StringComparer.Ordinal)
             .Select(catalog => new Dictionary<string, object?>
             {
-                ["code"] = catalog.Term.Code,
+                ["term"] = catalog.Term.Code,
                 ["name"] = TextFormat.Sanitize(catalog.Term.Name),
             })
             .ToList(),
@@ -70,7 +75,7 @@ public sealed class CatalogTools
     }
 
     [McpServerTool(Name = "get_course", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Course details and every section. Instructor emails are never returned.")]
+    [Description("Course details and every section. An instructor email is included only when its domain is exactly northeastern.edu or neu.edu.")]
     public Dictionary<string, object?> get_course(
         [Description("Banner term code.")] string term,
         [Description("Subject code.")] string subject,
@@ -78,7 +83,7 @@ public sealed class CatalogTools
     {
         var index = RequireIndex(term);
         var key = PlanReorganizer.RequireKey(subject, number);
-        var course = index.Course(key) ?? throw new ModelContextProtocol.McpException($"Unknown course {key} in {index.Term.Code}.");
+        var course = index.Course(key) ?? throw new ToolFailure("not_found", $"Unknown course {key} in {index.Term.Code}.");
         return new Dictionary<string, object?>
         {
             ["term"] = index.Term.Code,
@@ -130,16 +135,16 @@ public sealed class CatalogTools
     {
         var index = RequireIndex(term);
         if (courses is null || courses.Count == 0)
-            throw new ModelContextProtocol.McpException("courses is required.");
+            throw new ToolFailure("invalid_argument", "courses is required.");
         var inputs = new List<ScheduleCourseInput>();
         foreach (var course in courses)
         {
             var key = PlanReorganizer.RequireKey(course.Subject, course.Number);
             if (index.Course(key) is null)
-                throw new ModelContextProtocol.McpException($"Unknown course {key} in {index.Term.Code}.");
+                throw new ToolFailure("not_found", $"Unknown course {key} in {index.Term.Code}.");
             var sections = index.Sections(key);
             if (sections.Count == 0)
-                throw new ModelContextProtocol.McpException($"{key} has no sections in {index.Term.Code}.");
+                throw new ToolFailure("not_found", $"{key} has no sections in {index.Term.Code}.");
             var details = index.Course(key)!;
             inputs.Add(new ScheduleCourseInput(key, true, sections, minCredits: details.MinCredits, maxCredits: details.MaxCredits));
         }
@@ -176,46 +181,18 @@ public sealed class CatalogTools
     }
 
     [McpServerTool(Name = "reorganize_plan", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Moves courses across terms to avoid clashes and unoffered semesters. Does not save and does not add a semester.")]
+    [Description("Moves courses into terms the plan already has when that term offers them and prerequisite order is kept. Does not save and does not add a semester. Pass plan_id or plan, not both.")]
     public Dictionary<string, object?> reorganize_plan(
-        [Description("Plan with terms, each holding subject and number.")] PlanInput plan)
-    {
-        if (plan is null || plan.Terms.Count == 0)
-            throw new ModelContextProtocol.McpException("plan.terms is required.");
-        var draft = PlanReorganizer.FromInput(plan, _library);
-        var outcome = PlanReorganizer.Reorganize(draft, _library);
-        return new Dictionary<string, object?>
-        {
-            ["terms"] = outcome.Plan.Terms.OrderBy(term => term.SortKey).Select(term => new Dictionary<string, object?>
-            {
-                ["term"] = TextFormat.BannerCode(term.Season, term.Year),
-                ["name"] = term.Name,
-                ["courses"] = term.Courses.Select(course => new Dictionary<string, object?>
-                {
-                    ["subject"] = course.Key?.Subject,
-                    ["number"] = course.Key?.Number,
-                    ["title"] = TextFormat.Sanitize(course.Title),
-                }).ToList(),
-            }).ToList(),
-            ["moves"] = outcome.Moves.Select(move => new Dictionary<string, object?>
-            {
-                ["subject"] = move.Subject,
-                ["number"] = move.Number,
-                ["from_term"] = move.FromTerm,
-                ["to_term"] = move.ToTerm,
-                ["reason"] = move.Reason,
-            }).ToList(),
-            ["unresolved"] = outcome.Unresolved,
-            ["note"] = ReorganizeOutcome.Note,
-        };
-    }
+        [Description("Saved plan UUID.")] string? plan_id = null,
+        [Description("Unsaved plan: {terms:[{term, courses:[{subject, number}]}]}.")] PlanInput? plan = null) =>
+        _plans.Reorganize(plan_id, plan);
 
     private CatalogIndex RequireIndex(string? term)
     {
         if (!TextFormat.TryParseTerm(term, out _, out _, out var code))
-            throw new ModelContextProtocol.McpException($"Unknown term '{term}'.");
+            throw new ToolFailure("invalid_argument", $"Unknown term '{term}'.");
         return _library.IndexForCode(code)
-            ?? throw new ModelContextProtocol.McpException($"No bundled catalog for {code}. This server reads only the bundled terms.");
+            ?? throw new ToolFailure("not_found", $"No bundled catalog for {code}. This server reads only the bundled terms.");
     }
 
     private static NUPath? AttributePath(string? attribute)

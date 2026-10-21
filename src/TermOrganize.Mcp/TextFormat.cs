@@ -8,7 +8,7 @@ using TermOrganize.Core;
 
 namespace TermOrganize.Mcp;
 
-public static class TextFormat
+public static partial class TextFormat
 {
     private static readonly Regex Email = new(
         @"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
@@ -40,39 +40,43 @@ public static class TextFormat
         if (value.ValueKind == JsonValueKind.Number)
         {
             if (!value.TryGetInt32(out var minutes))
-                throw new ModelContextProtocol.McpException("Time must be a whole number of minutes.");
+                throw new ToolFailure("invalid_argument", "Time must be a whole number of minutes from midnight, or a clock time such as 08:00 or 8:00 AM.");
             return CheckMinutes(minutes);
         }
         if (value.ValueKind != JsonValueKind.String)
-            throw new ModelContextProtocol.McpException("Time must be HH:MM or minutes from midnight.");
+            throw new ToolFailure("invalid_argument", "Time must be 24-hour HH:MM, 12-hour h:mm AM or PM, or a whole number of minutes from midnight.");
         var text = value.GetString()?.Trim() ?? "";
         if (text.Length == 0) return null;
-        if (int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var asMinutes))
-            return CheckMinutes(asMinutes);
-        var period = "";
-        var clock = text;
-        if (text.EndsWith("AM", StringComparison.OrdinalIgnoreCase) || text.EndsWith("PM", StringComparison.OrdinalIgnoreCase))
+        if (!TryParseClockText(text, out var parsed))
+            throw new ToolFailure("invalid_argument", $"Could not read time '{text}'. Use 24-hour HH:MM, such as 08:00, or 12-hour such as 8:00 AM or 8am.");
+        return CheckMinutes(parsed);
+    }
+
+    /// <summary>24-hour HH:MM or H:MM, optional seconds, or 12-hour forms including "8am" and "8:00 AM".</summary>
+    public static bool TryParseClockText(string text, out int minutes)
+    {
+        minutes = 0;
+        var match = Clock24().Match(text);
+        if (match.Success)
         {
-            period = text[^2..];
-            clock = text[..^2].Trim();
+            var hour = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+            var minute = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+            var second = match.Groups[3].Success ? int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture) : 0;
+            if (minute > 59 || second > 59) return false;
+            if (hour == 24) return minute == 0 && second == 0 && (minutes = 24 * 60) >= 0;
+            if (hour > 23) return false;
+            minutes = hour * 60 + minute;
+            return true;
         }
-        var parts = clock.Split(':');
-        if (parts.Length is < 2 or > 3
-            || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var hour)
-            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minute))
-            throw new ModelContextProtocol.McpException($"Could not read time '{text}'.");
-        if (period.Length > 0)
-        {
-            if (hour < 1 || hour > 12 || minute is < 0 or > 59)
-                throw new ModelContextProtocol.McpException($"Could not read time '{text}'.");
-            if (hour == 12) hour = 0;
-            if (period.Equals("PM", StringComparison.OrdinalIgnoreCase)) hour += 12;
-        }
-        else if (hour is < 0 or > 23 || minute is < 0 or > 59)
-        {
-            throw new ModelContextProtocol.McpException($"Could not read time '{text}'.");
-        }
-        return CheckMinutes(hour * 60 + minute);
+        var twelve = Clock12().Match(text);
+        if (!twelve.Success) return false;
+        var hour12 = int.Parse(twelve.Groups[1].Value, CultureInfo.InvariantCulture);
+        var minute12 = twelve.Groups[2].Success ? int.Parse(twelve.Groups[2].Value, CultureInfo.InvariantCulture) : 0;
+        if (hour12 is < 1 or > 12 || minute12 > 59) return false;
+        if (hour12 == 12) hour12 = 0;
+        if (twelve.Groups[3].Value.Equals("PM", StringComparison.OrdinalIgnoreCase)) hour12 += 12;
+        minutes = hour12 * 60 + minute12;
+        return true;
     }
 
     public static DaySet ParseDaysOff(IEnumerable<string>? days)
@@ -95,7 +99,7 @@ public static class TextFormat
                     set |= OneLetter(ch);
                 continue;
             }
-            throw new ModelContextProtocol.McpException($"Unknown day '{text}'. Use U, M, T, W, R, F, or S.");
+            throw new ToolFailure("invalid_argument", $"Unknown day '{text}'. Use U, M, T, W, R, F, or S.");
         }
         return set;
     }
@@ -139,9 +143,15 @@ public static class TextFormat
     private static int CheckMinutes(int minutes)
     {
         if (minutes is < 0 or > 24 * 60)
-            throw new ModelContextProtocol.McpException("Time is outside 00:00 to 24:00.");
+            throw new ToolFailure("invalid_argument", "Time is outside 00:00 to 24:00.");
         return minutes;
     }
+
+    [GeneratedRegex(@"^(\d{1,2}):(\d{2})(?::(\d{2}))?$")]
+    private static partial Regex Clock24();
+
+    [GeneratedRegex(@"^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])$")]
+    private static partial Regex Clock12();
 
     private static bool TryOneDay(string text, out DaySet day)
     {

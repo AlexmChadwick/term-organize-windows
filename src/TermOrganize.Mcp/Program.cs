@@ -4,6 +4,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 
 namespace TermOrganize.Mcp;
@@ -89,7 +90,7 @@ public static class Program
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Services.AddSingleton(library);
         builder.Services.AddSingleton(plans);
-        var mcp = builder.Services
+        builder.Services
             .AddMcpServer(server =>
             {
                 server.ServerInfo = new Implementation { Name = "Term Organize", Version = "1.1.0" };
@@ -97,10 +98,39 @@ public static class Program
                 server.ProtocolVersion = "2025-06-18";
             })
             .WithStdioServerTransport()
-            .WithTools(new CatalogTools(library), McpJson.Tools)
-            .WithTools(new PlanReadTools(plans), McpJson.Tools);
-        if (!options.ReadOnly)
-            mcp.WithTools(new PlanWriteTools(plans), McpJson.Tools);
+            .WithTools(new CatalogTools(library, plans), McpJson.Tools)
+            .WithTools(new PlanReadTools(plans), McpJson.Tools)
+            .WithTools(new PlanWriteTools(plans), McpJson.Tools)
+            .WithRequestFilters(filters =>
+            {
+                filters.AddCallToolFilter(next => async (context, cancellationToken) =>
+                {
+                    var name = context.Params?.Name ?? "";
+                    if (options.ReadOnly && ToolErrors.WriteTools.Contains(name))
+                        return ToolErrors.Result("read_only", $"The server is read-only, so {name} is unavailable.");
+                    try
+                    {
+                        return await next(context, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        return ToolErrors.FromException(ex, name);
+                    }
+                });
+                if (options.ReadOnly)
+                {
+                    filters.AddListToolsFilter(next => async (context, cancellationToken) =>
+                    {
+                        var listed = await next(context, cancellationToken).ConfigureAwait(false);
+                        for (var i = listed.Tools.Count - 1; i >= 0; i--)
+                        {
+                            if (ToolErrors.WriteTools.Contains(listed.Tools[i].Name))
+                                listed.Tools.RemoveAt(i);
+                        }
+                        return listed;
+                    });
+                }
+            });
         await builder.Build().RunAsync().ConfigureAwait(false);
         return 0;
     }

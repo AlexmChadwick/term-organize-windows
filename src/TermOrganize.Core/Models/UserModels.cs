@@ -258,6 +258,8 @@ public sealed class DegreePlanTerm
 public sealed class DegreePlan
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Starts at 1. Each change of this plan increments it. MCP clients send it back as expected_revision.</summary>
+    public int Revision { get; set; }
     public string Name { get; set; } = "";
     public string? Program { get; set; }
     public string? StudentName { get; set; }
@@ -405,6 +407,7 @@ public sealed class RequirementSubstitution
 
 public sealed class UserData
 {
+    public const int SupportedVersion = 1;
     public int Version { get; set; } = 1;
     public AppPreferences Preferences { get; set; } = new();
     public List<SavedCourse> Saved { get; set; } = [];

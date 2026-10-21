@@ -96,6 +96,18 @@ public sealed class StdioTests
             var body = listed.StructuredContent?.ToString()
                 ?? string.Join("\n", listed.Content.Select(block => block.ToString()));
             Assert.Contains("202730", body);
+            Assert.Contains("\"term\"", body);
+            Assert.DoesNotContain("\"code\"", body);
+
+            var missingName = await client.CallToolAsync("create_plan", new Dictionary<string, object?>());
+            Assert.True(missingName.IsError);
+            Assert.Equal("invalid_argument", ErrorCode(missingName));
+            Assert.False(string.IsNullOrWhiteSpace(ErrorMessage(missingName)));
+
+            var unknown = await client.CallToolAsync("not_a_tool", new Dictionary<string, object?>());
+            Assert.True(unknown.IsError);
+            Assert.Equal("unknown_tool", ErrorCode(unknown));
+            Assert.False(string.IsNullOrWhiteSpace(ErrorMessage(unknown)));
         }
 
         await using (var readOnly = await Connect(dll, data, readOnly: true))
@@ -104,6 +116,10 @@ public sealed class StdioTests
             Assert.Contains(hidden, tool => tool.Name == "get_plan");
             Assert.DoesNotContain(hidden, tool => tool.Name == "create_plan");
             Assert.DoesNotContain(hidden, tool => tool.Name == "delete_plan");
+            var denied = await readOnly.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Nope" });
+            Assert.True(denied.IsError);
+            Assert.Equal("read_only", ErrorCode(denied));
+            Assert.False(string.IsNullOrWhiteSpace(ErrorMessage(denied)));
         }
         Directory.Delete(directory, recursive: true);
     }
@@ -120,4 +136,10 @@ public sealed class StdioTests
         });
         return await McpClient.CreateAsync(transport, new McpClientOptions { ProtocolVersion = "2025-06-18" });
     }
+
+    private static string? ErrorCode(ModelContextProtocol.Protocol.CallToolResult result) =>
+        result.StructuredContent?.GetProperty("error").GetProperty("code").GetString();
+
+    private static string? ErrorMessage(ModelContextProtocol.Protocol.CallToolResult result) =>
+        result.StructuredContent?.GetProperty("error").GetProperty("message").GetString();
 }

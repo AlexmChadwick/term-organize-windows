@@ -487,6 +487,7 @@ public sealed class UserDataStore
                     AssignFrom(UserDataMerge.Merge(_baseline, Data(), diskData));
                     merged = true;
                 }
+                StampDegreePlanRevisions(_baseline, Data());
                 var payload = JsonSerializer.SerializeToUtf8Bytes(Data(), AppJson.UserData);
                 var directory = Path.GetDirectoryName(Path.GetFullPath(_path));
                 if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
@@ -636,6 +637,42 @@ public sealed class UserDataStore
     }
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+
+    /// <summary>
+    /// A new degree plan starts at revision 1. A plan whose contents changed, and whose
+    /// revision was not already advanced, increments by one.
+    /// </summary>
+    private static void StampDegreePlanRevisions(UserData baseline, UserData current)
+    {
+        var previous = new Dictionary<Guid, DegreePlan>();
+        foreach (var plan in baseline.DegreePlans)
+            previous[plan.Id] = plan;
+        foreach (var plan in current.DegreePlans)
+        {
+            if (!previous.TryGetValue(plan.Id, out var before))
+            {
+                if (plan.Revision < 1) plan.Revision = 1;
+                continue;
+            }
+            var shown = Math.Max(before.Revision, 1);
+            if (SamePlanIgnoringRevision(before, plan))
+            {
+                if (plan.Revision < 1) plan.Revision = shown;
+                continue;
+            }
+            if (plan.Revision <= before.Revision)
+                plan.Revision = shown + 1;
+        }
+    }
+
+    private static bool SamePlanIgnoringRevision(DegreePlan left, DegreePlan right)
+    {
+        var a = UserDataMerge.Clone(left);
+        var b = UserDataMerge.Clone(right);
+        a.Revision = 0;
+        b.Revision = 0;
+        return UserDataMerge.Same(a, b);
+    }
 
     private static bool SamePlans(List<SchedulePlan> a, List<SchedulePlan> b) =>
         a.Count == b.Count && a.Select(p => p.Id).SequenceEqual(b.Select(p => p.Id));

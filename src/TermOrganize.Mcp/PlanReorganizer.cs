@@ -20,72 +20,38 @@ public sealed class ReorganizeOutcome
     public required DegreePlan Plan { get; init; }
     public required List<ReorganizeMove> Moves { get; init; }
     public required List<Dictionary<string, object?>> Unresolved { get; init; }
-    public const string Note =
-        "Whole-plan reorganize is implemented on top of DegreePlanReordering. " +
-        "The core library only suggests moves for one semester. " +
-        "This tool walks the plan and applies suggestions. It does not add a semester, so graduation is not delayed.";
 }
 
 /// <summary>
-/// Walks every semester and applies one-semester suggestions from
-/// <see cref="DegreePlanReordering"/> when they do not add a semester.
+/// Moves a course only into a term the plan already has. The destination catalog must
+/// offer it, prerequisite order among courses on the plan is kept, and no semester is added.
 /// </summary>
 public static class PlanReorganizer
 {
-    public const int MaxPasses = 12;
-
     public static ReorganizeOutcome Reorganize(DegreePlan source, CatalogLibrary library)
     {
         var working = Clone(source);
         working.SortTerms();
         var moves = new List<ReorganizeMove>();
-        var indexes = library.ByCode.Values.ToList();
-        for (var pass = 0; pass < MaxPasses; pass++)
+        var guard = Math.Max(1, working.Terms.Sum(term => term.Courses.Count) + 1);
+        for (var pass = 0; pass < guard; pass++)
         {
             working.SortTerms();
-            DegreePlanReordering.Suggestion? chosen = null;
-            foreach (var term in working.Terms.ToList())
-            {
-                var blocking = Blocking(working, term, library);
-                if (blocking.Count == 0) continue;
-                var suggestions = DegreePlanReordering.Suggestions(
-                    working,
-                    term.Id,
-                    blocking,
-                    History(library, Keys(working)),
-                    key => RequisiteOf(indexes, key),
-                    working.DeclaredEquivalences);
-                chosen = suggestions.FirstOrDefault(item => item.AddsSemester is null && item.Moves.Count > 0);
-                if (chosen is not null) break;
-            }
-            if (chosen is null) break;
-            var names = working.Terms.ToDictionary(term => term.Id, term => term.Name);
-            foreach (var move in chosen.Moves)
-            {
-                moves.Add(new ReorganizeMove
-                {
-                    Subject = move.Course.Subject,
-                    Number = move.Course.Number,
-                    FromTerm = names.TryGetValue(move.From, out var from) ? from : move.From.ToString("D"),
-                    ToTerm = names.TryGetValue(move.To, out var to) ? to : move.To.ToString("D"),
-                    Reason = string.Join("; ", chosen.Reasons.Select(TextFormat.Sanitize)),
-                });
-            }
-            DegreePlanReordering.Apply(chosen, working);
+            if (!TryMoveOne(working, library, moves)) break;
         }
 
         var unresolved = new List<Dictionary<string, object?>>();
         working.SortTerms();
         foreach (var term in working.Terms)
         {
-            foreach (var key in Blocking(working, term, library))
+            foreach (var course in term.Courses)
             {
+                if (course.Key is not CourseKey key || PlacementOk(working, term, key, library)) continue;
                 unresolved.Add(new Dictionary<string, object?>
                 {
                     ["subject"] = key.Subject,
                     ["number"] = key.Number,
-                    ["term"] = term.Name,
-                    ["reason"] = "Still blocked. The only remaining fix would add a semester, which this tool will not do.",
+                    ["reason"] = UnresolvedReason(working, term, key, library),
                 });
             }
         }
@@ -99,7 +65,7 @@ public static class PlanReorganizer
         {
             var label = termInput.Term ?? termInput.Code ?? "";
             if (!TextFormat.TryParseTerm(label, out var season, out var year, out _))
-                throw new ModelContextProtocol.McpException($"Unknown term '{label}'.");
+                throw new ToolFailure("invalid_argument", $"Unknown term '{label}'.");
             var term = plan.Terms.FirstOrDefault(item => item.Season == season && item.Year == year);
             if (term is null)
             {
@@ -110,7 +76,7 @@ public static class PlanReorganizer
             {
                 var key = RequireKey(course.Subject, course.Number);
                 if (library.FindCourse(key) is null)
-                    throw new ModelContextProtocol.McpException($"Unknown course {key}.");
+                    throw new ToolFailure("not_found", $"Unknown course {key}.");
                 var details = library.FindCourse(key)!;
                 term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits));
             }
@@ -119,78 +85,138 @@ public static class PlanReorganizer
         return plan;
     }
 
-    public static List<CourseKey> Blocking(DegreePlan plan, DegreePlanTerm term, CatalogLibrary library)
-    {
-        var keys = term.Courses.Select(course => course.Key).OfType<CourseKey>().ToList();
-        if (keys.Count == 0) return [];
-        var index = library.IndexFor(term.Season, term.Year);
-        var history = History(library, keys);
-        var missing = new List<CourseKey>();
-        foreach (var key in keys)
-        {
-            if (index is not null && !library.OfferedIn(index, key))
-            {
-                missing.Add(key);
-                continue;
-            }
-            if (history.IsLikelyOffered(key, term.Season) == false)
-                missing.Add(key);
-        }
-        if (missing.Count > 0) return missing;
-        if (index is null) return [];
-
-        var inputs = keys.Select(key => new ScheduleCourseInput(
-            key,
-            isRequired: true,
-            index.Sections(key),
-            minCredits: index.Course(key)?.MinCredits,
-            maxCredits: index.Course(key)?.MaxCredits)).ToList();
-        var generated = ScheduleGenerator.Generate(
-            inputs,
-            new ScheduleFilters(),
-            limits: new ScheduleLimits
-            {
-                MaxResults = 1,
-                MaxExhaustiveLeaves = 1_000,
-                MaxNodes = 250_000,
-                TimeBudget = 0.2,
-                SampleLeaves = 0,
-                SampleTimeBudget = 0,
-                AllowSampling = false,
-            });
-        if (generated.IsExhaustive && generated.TotalFound == 0) return keys;
-        return [];
-    }
-
     public static CourseKey RequireKey(string? subject, string? number)
     {
         var key = new CourseKey((subject ?? "").Trim().ToUpperInvariant(), (number ?? "").Trim().ToUpperInvariant());
         if (key.Subject.Length == 0 || key.Number.Length == 0 || key.Subject.Any(ch => !char.IsLetter(ch)))
-            throw new ModelContextProtocol.McpException("subject and number are required.");
+            throw new ToolFailure("invalid_argument", "subject and number are required.");
         return key;
     }
 
-    private static OfferingHistory History(CatalogLibrary library, IReadOnlyCollection<CourseKey> keys) =>
-        OfferingHistoryBuilder.FromCatalogs(library.Catalogs, keys);
-
-    private static List<CourseKey> Keys(DegreePlan plan) =>
-        plan.Terms.SelectMany(term => term.Courses).Select(course => course.Key).OfType<CourseKey>().Distinct().ToList();
-
-    private static RequisiteAnswer RequisiteOf(IReadOnlyList<CatalogIndex> indexes, CourseKey key)
+    private static bool TryMoveOne(DegreePlan plan, CatalogLibrary library, List<ReorganizeMove> moves)
     {
-        foreach (var index in indexes)
+        foreach (var term in plan.Terms.OrderBy(item => item.SortKey).ToList())
+        {
+            foreach (var course in term.Courses.ToList())
+            {
+                if (course.Key is not CourseKey key || PlacementOk(plan, term, key, library)) continue;
+                var target = Destination(plan, term, key, library);
+                if (target is null) continue;
+                term.Courses.Remove(course);
+                if (!string.IsNullOrWhiteSpace(course.SelectedCrn))
+                {
+                    var index = library.IndexFor(target.Season, target.Year);
+                    if (index?.Section(course.SelectedCrn)?.CourseKey != key)
+                        course.SelectedCrn = null;
+                }
+                target.Courses.Add(course);
+                var why = Offered(library, term, key)
+                    ? $"Prerequisite order on the plan is not kept in {term.Name}."
+                    : $"{key} is not offered in {term.Name}.";
+                moves.Add(new ReorganizeMove
+                {
+                    Subject = key.Subject,
+                    Number = key.Number,
+                    FromTerm = term.Name,
+                    ToTerm = target.Name,
+                    Reason = $"{why} {target.Name} offers it, and the move keeps prerequisite order without adding a semester.",
+                });
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static DegreePlanTerm? Destination(DegreePlan plan, DegreePlanTerm current, CourseKey key, CatalogLibrary library)
+    {
+        DegreePlanTerm? best = null;
+        foreach (var term in plan.Terms.OrderBy(item => item.SortKey))
+        {
+            if (term.Id == current.Id) continue;
+            if (!Offered(library, term, key)) continue;
+            if (!OrderKept(plan, term, key, library)) continue;
+            best ??= term;
+        }
+        return best;
+    }
+
+    private static bool PlacementOk(DegreePlan plan, DegreePlanTerm term, CourseKey key, CatalogLibrary library) =>
+        Offered(library, term, key) && OrderKept(plan, term, key, library);
+
+    private static bool Offered(CatalogLibrary library, DegreePlanTerm term, CourseKey key)
+    {
+        var index = library.IndexFor(term.Season, term.Year);
+        return index is not null && library.OfferedIn(index, key);
+    }
+
+    /// <summary>
+    /// Prerequisites that are not on the plan are treated as outside this plan.
+    /// A prerequisite that is on the plan must sit in an earlier term, and a later
+    /// course on the plan that requires this one must stay later.
+    /// </summary>
+    private static bool OrderKept(DegreePlan plan, DegreePlanTerm destination, CourseKey key, CatalogLibrary library)
+    {
+        var tree = RequisiteOf(library, key);
+        if (tree is not null && !tree.IsSatisfied(AssumedComplete(plan, destination, key, tree), assumeTestsMet: true))
+            return false;
+        foreach (var otherTerm in plan.Terms)
+        {
+            if (otherTerm.SortKey > destination.SortKey) continue;
+            foreach (var other in otherTerm.Courses)
+            {
+                if (other.Key is not CourseKey otherKey || otherKey == key) continue;
+                var required = RequisiteOf(library, otherKey);
+                if (required is null || !required.ReferencedCourses().Contains(key)) continue;
+                var without = AssumedComplete(plan, otherTerm, otherKey, required);
+                without.Remove(key);
+                if (!required.IsSatisfied(without, assumeTestsMet: true))
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    private static HashSet<CourseKey> AssumedComplete(DegreePlan plan, DegreePlanTerm destination, CourseKey moving, Requisite tree)
+    {
+        var onPlan = new HashSet<CourseKey>();
+        foreach (var term in plan.Terms)
+            foreach (var course in term.Courses)
+                if (course.Key is CourseKey key) onPlan.Add(key);
+        var earlier = new HashSet<CourseKey>();
+        foreach (var term in plan.Terms)
+        {
+            if (term.SortKey >= destination.SortKey) continue;
+            foreach (var course in term.Courses)
+                if (course.Key is CourseKey key && key != moving) earlier.Add(key);
+        }
+        foreach (var referenced in tree.ReferencedCourses())
+            if (!onPlan.Contains(referenced)) earlier.Add(referenced);
+        return earlier;
+    }
+
+    private static string UnresolvedReason(DegreePlan plan, DegreePlanTerm term, CourseKey key, CatalogLibrary library)
+    {
+        var elsewhere = plan.Terms.Any(candidate => candidate.Id != term.Id && Offered(library, candidate, key));
+        if (!elsewhere)
+            return $"{key} is not offered in {term.Name}, and no other term already on the plan offers it.";
+        return $"{key} cannot move to another term already on the plan without breaking prerequisite order.";
+    }
+
+    private static Requisite? RequisiteOf(CatalogLibrary library, CourseKey key)
+    {
+        foreach (var index in library.ByCode.Values)
         {
             var course = index.Course(key);
             if (course is not { DetailsLoaded: true }) continue;
-            return course.Prereqs is Requisite requisite ? RequisiteAnswer.Known(requisite) : RequisiteAnswer.None;
+            return course.Prereqs;
         }
-        return RequisiteAnswer.Unknown;
+        return null;
     }
 
     private static DegreePlan Clone(DegreePlan plan)
     {
         var json = JsonSerializer.Serialize(plan, AppJson.UserData);
         return JsonSerializer.Deserialize<DegreePlan>(json, AppJson.UserData)
-            ?? throw new ModelContextProtocol.McpException("Could not copy the plan.");
+            ?? throw new ToolFailure("storage_error", "Could not copy the plan.");
     }
 }

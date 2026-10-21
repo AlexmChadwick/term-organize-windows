@@ -1,7 +1,6 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-using System.Security.Cryptography;
 using System.Text.Json;
 using TermOrganize.Core;
 
@@ -37,6 +36,7 @@ public sealed class PlanService
     public Dictionary<string, object?> Create(string? name, IReadOnlyList<string>? terms)
     {
         var title = RequireName(name);
+        var store = Open();
         var plan = new DegreePlan
         {
             Name = title,
@@ -48,23 +48,22 @@ public sealed class PlanService
             foreach (var label in terms)
             {
                 if (!TextFormat.TryParseTerm(label, out var season, out var year, out _))
-                    throw new ModelContextProtocol.McpException($"Unknown term '{label}'.");
+                    throw new ToolFailure("invalid_argument", $"Unknown term '{label}'.");
                 if (plan.Terms.Any(term => term.Season == season && term.Year == year)) continue;
                 plan.Terms.Add(new DegreePlanTerm { Season = season, Year = year });
             }
         }
-        var store = Open();
         store.AddDegreePlan(plan);
         return Project(plan);
     }
 
-    public Dictionary<string, object?> Rename(string planId, string? name, string? expectedRevision)
+    public Dictionary<string, object?> Rename(string planId, string? name, int? expectedRevision)
     {
         var title = RequireName(name);
         return Mutate(planId, expectedRevision, plan => plan.Name = title);
     }
 
-    public Dictionary<string, object?> AddCourse(string planId, string? termLabel, string? subject, string? number, string? crn, string? expectedRevision)
+    public Dictionary<string, object?> AddCourse(string planId, string? termLabel, string? subject, string? number, string? crn, int? expectedRevision)
     {
         var key = PlanReorganizer.RequireKey(subject, number);
         return Mutate(planId, expectedRevision, plan =>
@@ -75,8 +74,8 @@ public sealed class PlanService
             {
                 var where = plan.Terms.First(item => item.Courses.Contains(existing)).Name;
                 if (where == term.Name)
-                    throw new ModelContextProtocol.McpException($"{key} is already in {where}.");
-                throw new ModelContextProtocol.McpException($"{key} is already in {where}. Use move_course.");
+                    throw new ToolFailure("invalid_argument", $"{key} is already in {where}.");
+                throw new ToolFailure("invalid_argument", $"{key} is already in {where}. Use move_course.");
             }
             var details = _library.FindCourse(key)!;
             term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits)
@@ -86,19 +85,19 @@ public sealed class PlanService
         });
     }
 
-    public Dictionary<string, object?> RemoveCourse(string planId, string? termLabel, string? subject, string? number, string? expectedRevision)
+    public Dictionary<string, object?> RemoveCourse(string planId, string? termLabel, string? subject, string? number, int? expectedRevision)
     {
         var key = PlanReorganizer.RequireKey(subject, number);
         return Mutate(planId, expectedRevision, plan =>
         {
             var term = RequireTerm(plan, termLabel);
             var course = term.Courses.FirstOrDefault(item => item.Key == key)
-                ?? throw new ModelContextProtocol.McpException($"{key} is not in {term.Name}.");
+                ?? throw new ToolFailure("not_found", $"{key} is not in {term.Name}.");
             term.Courses.Remove(course);
         });
     }
 
-    public Dictionary<string, object?> MoveCourse(string planId, string? subject, string? number, string? fromLabel, string? toLabel, string? expectedRevision)
+    public Dictionary<string, object?> MoveCourse(string planId, string? subject, string? number, string? fromLabel, string? toLabel, int? expectedRevision)
     {
         var key = PlanReorganizer.RequireKey(subject, number);
         return Mutate(planId, expectedRevision, plan =>
@@ -106,11 +105,11 @@ public sealed class PlanService
             var from = RequireTerm(plan, fromLabel);
             var to = EnsureTerm(plan, toLabel);
             if (from.Id == to.Id)
-                throw new ModelContextProtocol.McpException("from_term and to_term are the same.");
+                throw new ToolFailure("invalid_argument", "from_term and to_term are the same.");
             var course = from.Courses.FirstOrDefault(item => item.Key == key)
-                ?? throw new ModelContextProtocol.McpException($"{key} is not in {from.Name}.");
+                ?? throw new ToolFailure("not_found", $"{key} is not in {from.Name}.");
             if (to.Courses.Any(item => item.Key == key))
-                throw new ModelContextProtocol.McpException($"{key} is already in {to.Name}.");
+                throw new ToolFailure("invalid_argument", $"{key} is already in {to.Name}.");
             if (!string.IsNullOrWhiteSpace(course.SelectedCrn))
             {
                 var destination = _library.IndexFor(to.Season, to.Year);
@@ -122,22 +121,22 @@ public sealed class PlanService
         });
     }
 
-    public Dictionary<string, object?> SetSection(string planId, string? termLabel, string? subject, string? number, string? crn, string? expectedRevision)
+    public Dictionary<string, object?> SetSection(string planId, string? termLabel, string? subject, string? number, string? crn, int? expectedRevision)
     {
         var key = PlanReorganizer.RequireKey(subject, number);
         if (string.IsNullOrWhiteSpace(crn))
-            throw new ModelContextProtocol.McpException("crn is required.");
+            throw new ToolFailure("invalid_argument", "crn is required.");
         return Mutate(planId, expectedRevision, plan =>
         {
             var term = RequireTerm(plan, termLabel);
             var course = term.Courses.FirstOrDefault(item => item.Key == key)
-                ?? throw new ModelContextProtocol.McpException($"{key} is not in {term.Name}.");
+                ?? throw new ToolFailure("not_found", $"{key} is not in {term.Name}.");
             EnsureCrn(key, term, crn);
             course.SelectedCrn = crn.Trim();
         });
     }
 
-    public Dictionary<string, object?> ApplyReorganize(string planId, string? expectedRevision)
+    public Dictionary<string, object?> ApplyReorganize(string planId, int? expectedRevision)
     {
         ReorganizeOutcome? outcome = null;
         var projected = Mutate(planId, expectedRevision, plan =>
@@ -147,34 +146,50 @@ public sealed class PlanService
         });
         projected["moves"] = outcome!.Moves.Select(MoveJson).ToList();
         projected["unresolved"] = outcome.Unresolved;
-        projected["note"] = ReorganizeOutcome.Note;
         return projected;
     }
 
-    public Dictionary<string, object?> Delete(string planId, string? expectedRevision, bool confirm)
+    public Dictionary<string, object?> Reorganize(string? planId, PlanInput? plan)
+    {
+        var hasId = !string.IsNullOrWhiteSpace(planId);
+        var hasPlan = plan is { Terms.Count: > 0 };
+        if (hasId && plan is not null)
+            throw new ToolFailure("invalid_argument", "Pass plan_id or plan, not both.");
+        if (!hasId && !hasPlan)
+            throw new ToolFailure("invalid_argument", "plan_id or plan.terms is required.");
+        DegreePlan source = hasId
+            ? Require(Open(), planId!)
+            : PlanReorganizer.FromInput(plan!, _library);
+        var outcome = PlanReorganizer.Reorganize(source, _library);
+        var body = new Dictionary<string, object?>
+        {
+            ["moves"] = outcome.Moves.Select(MoveJson).ToList(),
+            ["unresolved"] = outcome.Unresolved,
+            ["plan"] = hasId ? Project(outcome.Plan) : Draft(outcome.Plan),
+        };
+        return body;
+    }
+
+    public Dictionary<string, object?> Delete(string planId, int? expectedRevision, bool confirm)
     {
         if (!confirm)
-            throw new ModelContextProtocol.McpException("delete_plan requires confirm: true.");
+            throw new ToolFailure("confirm_required", "delete_plan requires confirm: true.");
         var id = ParseId(planId);
         var store = Open();
-        var plan = store.DegreePlan(id) ?? throw new ModelContextProtocol.McpException($"Unknown plan {planId}.");
+        var plan = store.DegreePlan(id) ?? throw new ToolFailure("not_found", $"Unknown plan {planId}.");
         CheckRevision(plan, expectedRevision);
         store.Plans.RemoveAll(item => ScheduleLink.Owns(id, item));
         store.DeleteDegreePlan(id);
         return new Dictionary<string, object?> { ["deleted"] = true, ["id"] = id.ToString("D") };
     }
 
-    public static string RevisionOf(DegreePlan plan)
-    {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(plan, AppJson.UserData);
-        return Convert.ToHexString(SHA256.HashData(bytes))[..16].ToLowerInvariant();
-    }
+    public static int RevisionOf(DegreePlan plan) => Math.Max(plan.Revision, 1);
 
-    private Dictionary<string, object?> Mutate(string planId, string? expectedRevision, Action<DegreePlan> change)
+    private Dictionary<string, object?> Mutate(string planId, int? expectedRevision, Action<DegreePlan> change)
     {
         var id = ParseId(planId);
         var store = Open();
-        var plan = store.DegreePlan(id) ?? throw new ModelContextProtocol.McpException($"Unknown plan {planId}.");
+        var plan = store.DegreePlan(id) ?? throw new ToolFailure("not_found", $"Unknown plan {planId}.");
         CheckRevision(plan, expectedRevision);
         change(plan);
         plan.UpdatedAt = DateTimeOffset.UtcNow;
@@ -229,7 +244,7 @@ public sealed class PlanService
     private void EnsureKnown(CourseKey key, DegreePlanTerm term, string? crn)
     {
         if (_library.FindCourse(key) is null)
-            throw new ModelContextProtocol.McpException($"Unknown course {key}.");
+            throw new ToolFailure("not_found", $"Unknown course {key}.");
         if (!string.IsNullOrWhiteSpace(crn))
             EnsureCrn(key, term, crn);
     }
@@ -237,30 +252,82 @@ public sealed class PlanService
     private void EnsureCrn(CourseKey key, DegreePlanTerm term, string crn)
     {
         var index = _library.IndexFor(term.Season, term.Year)
-            ?? throw new ModelContextProtocol.McpException($"No bundled catalog for {term.Name}, so CRN {crn.Trim()} cannot be checked.");
+            ?? throw new ToolFailure("not_found", $"No bundled catalog for {term.Name}, so CRN {crn.Trim()} cannot be checked.");
         var section = index.Section(crn.Trim());
         if (section is null || section.CourseKey != key)
-            throw new ModelContextProtocol.McpException($"CRN {crn.Trim()} is not a section of {key} in {term.Name}.");
+            throw new ToolFailure("not_found", $"CRN {crn.Trim()} is not a section of {key} in {term.Name}.");
     }
 
-    private UserDataStore Open() => new(_path);
+    private UserDataStore Open()
+    {
+        EnsureReadable();
+        return new(_path);
+    }
+
+    private void EnsureReadable()
+    {
+        if (!File.Exists(_path)) return;
+        byte[] bytes;
+        try { bytes = File.ReadAllBytes(_path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new ToolFailure("storage_error", $"Could not read {_path}: {ex.Message}");
+        }
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(bytes); }
+        catch (JsonException ex)
+        {
+            throw new ToolFailure("storage_error", $"Could not read {_path}: malformed JSON ({ex.Message}).");
+        }
+        using (doc)
+        {
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new ToolFailure("storage_error", $"Could not read {_path}: malformed JSON (the file is not an object).");
+            if (root.TryGetProperty("version", out var version))
+            {
+                if (!version.TryGetInt32(out var number))
+                    throw new ToolFailure("storage_error", $"Could not read {_path}: malformed JSON (version is not an integer).");
+                if (number > UserData.SupportedVersion)
+                    throw new ToolFailure("storage_error", $"Could not read {_path}: unknown newer version {number}.");
+            }
+            foreach (var name in new[] { "degreePlans", "plans", "saved", "recents", "watchlist", "searchHistory" })
+            {
+                if (root.TryGetProperty(name, out var list) && list.ValueKind != JsonValueKind.Array)
+                    throw new ToolFailure("storage_error", $"Could not read {_path}: malformed JSON ({name} is not a list).");
+            }
+            if (!root.TryGetProperty("degreePlans", out var plans)) return;
+            foreach (var item in plans.EnumerateArray())
+            {
+                try
+                {
+                    if (item.Deserialize<DegreePlan>(AppJson.UserData) is null)
+                        throw new JsonException("a degree plan was empty");
+                }
+                catch (JsonException ex)
+                {
+                    throw new ToolFailure("storage_error", $"Could not read {_path}: malformed JSON ({ex.Message}).");
+                }
+            }
+        }
+    }
 
     private static DegreePlan Require(UserDataStore store, string planId) =>
-        store.DegreePlan(ParseId(planId)) ?? throw new ModelContextProtocol.McpException($"Unknown plan {planId}.");
+        store.DegreePlan(ParseId(planId)) ?? throw new ToolFailure("not_found", $"Unknown plan {planId}.");
 
-    private static void CheckRevision(DegreePlan plan, string? expected)
+    private static void CheckRevision(DegreePlan plan, int? expected)
     {
-        if (string.IsNullOrWhiteSpace(expected))
-            throw new ModelContextProtocol.McpException("expected_revision is required.");
+        if (expected is null)
+            throw new ToolFailure("invalid_argument", "expected_revision is required.");
         var current = RevisionOf(plan);
-        if (!current.Equals(expected.Trim(), StringComparison.OrdinalIgnoreCase))
-            throw new ModelContextProtocol.McpException($"Plan changed. Current revision is {current}.");
+        if (expected.Value != current)
+            throw new ToolFailure("revision_conflict", $"Plan changed. Current revision is {current}.");
     }
 
     private static Guid ParseId(string? planId)
     {
         if (!Guid.TryParse(planId, out var id))
-            throw new ModelContextProtocol.McpException("plan_id must be a UUID.");
+            throw new ToolFailure("invalid_argument", "plan_id must be a UUID.");
         return id;
     }
 
@@ -268,22 +335,22 @@ public sealed class PlanService
     {
         var title = name?.Trim() ?? "";
         if (title.Length == 0)
-            throw new ModelContextProtocol.McpException("name is required.");
+            throw new ToolFailure("invalid_argument", "name is required.");
         return title;
     }
 
     private static DegreePlanTerm RequireTerm(DegreePlan plan, string? label)
     {
         if (!TextFormat.TryParseTerm(label, out var season, out var year, out _))
-            throw new ModelContextProtocol.McpException($"Unknown term '{label}'.");
+            throw new ToolFailure("invalid_argument", $"Unknown term '{label}'.");
         return plan.Terms.FirstOrDefault(term => term.Season == season && term.Year == year)
-            ?? throw new ModelContextProtocol.McpException($"The plan has no {season.ExportName()} {year} term.");
+            ?? throw new ToolFailure("not_found", $"The plan has no {season.ExportName()} {year} term.");
     }
 
     private static DegreePlanTerm EnsureTerm(DegreePlan plan, string? label)
     {
         if (!TextFormat.TryParseTerm(label, out var season, out var year, out _))
-            throw new ModelContextProtocol.McpException($"Unknown term '{label}'.");
+            throw new ToolFailure("invalid_argument", $"Unknown term '{label}'.");
         var term = plan.Terms.FirstOrDefault(item => item.Season == season && item.Year == year);
         if (term is not null) return term;
         term = new DegreePlanTerm { Season = season, Year = year };
@@ -315,6 +382,13 @@ public sealed class PlanService
         body["validation"] = Validate(plan);
         return body;
     }
+
+    private Dictionary<string, object?> Draft(DegreePlan plan) => new()
+    {
+        ["name"] = plan.Name,
+        ["terms"] = plan.Terms.OrderBy(term => term.SortKey).Select(TermJson).ToList(),
+        ["validation"] = Validate(plan),
+    };
 
     private Dictionary<string, object?> TermJson(DegreePlanTerm term)
     {

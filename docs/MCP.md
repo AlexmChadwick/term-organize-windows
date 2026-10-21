@@ -53,7 +53,7 @@ The MCP process is not inside the package, so it does not get that redirection a
 
 If none of those files exist yet and the package folder is present, the next write goes to the LocalCache path above, which is where the installed MSIX app will read it. Otherwise the next write goes to the portable path. `--data-file` or `TERM_ORGANIZE_DATA_FILE` skips this search.
 
-Writes reload the file, compare `expected_revision`, then save with a temp file and rename. The previous file is copied to `UserData.json.bak` (one rolling backup). If the desktop app saved in between, the write fails and names the current revision.
+Writes reload the file, compare `expected_revision`, then save with a temp file and rename. The previous file is copied to `UserData.json.bak` (one rolling backup). If the plan changed, the write fails with `revision_conflict` and names the current integer revision.
 
 The desktop app also watches this file. Before it saves, it hashes the bytes and compares that revision, along with the UTC write time, to the file it last loaded. Plans only one side edited are merged. A plan both sides edited keeps the file already on disk, and the app's copy is saved beside it as `<name> (edited in app)`, so an MCP write is not replaced. A change while the window is open is reloaded through a debounced file watcher.
 
@@ -101,16 +101,37 @@ Read only:
 }
 ```
 
+SHARED CONTRACT
+
+- Transport: stdio, newline-delimited JSON-RPC 2.0, one message per line, per the MCP stdio spec (protocol 2025-06-18). No Content-Length framing.
+- Term objects: {"term":"202730","name":"Spring 2027"}. The key is always "term", never "code".
+- Revisions: integer, starting at 1 and incremented on every change to that plan.
+- Errors: a tool result with isError:true and structuredContent {"error":{"code":C,"message":M}}, where C is one of: invalid_argument, not_found, revision_conflict, confirm_required, read_only, storage_error, unknown_tool. The message is never empty. A write tool called with --read-only on returns read_only, not unknown_tool. Write tools stay hidden from tools/list.
+- Instructors in get_course: [{"name":..., "email":... (optional)}]. The email is present only when its domain is EXACTLY northeastern.edu or neu.edu, compared case-insensitively. Subdomains are not allowed (husky.neu.edu, ccs.neu.edu, mail.neu.edu are all dropped).
+- create_plan {name, terms?: ["202710","202730"]}, a list of term strings.
+- reorganize_plan accepts either {plan_id} or {plan:{terms:[{term, courses:[{subject, number}]}]}}. It returns {moves:[{subject, number, from_term, to_term, reason}], unresolved:[{subject, number, reason}], plan:{...}}.
+- Reorganize rule, the same everywhere: a course moves only into a term the plan already has. The target term's bundled catalog must offer the course, prerequisite order within the plan must be kept, and it never adds a semester. A course is offered in a term when the bundled catalog for that term has at least one section of it.
+- Shared fixture: tests/fixtures/mcp-reorganize-fixture.json. It is a plan with CS 4805, CS 2535, CS 2700, CS 4130 and CS 2701 in Fall 2026, plus an empty Spring 2027. Each server must have a test that checks its output against the expected moves. Work out the expected result from the bundled 202730 catalog and the prereqs, and write it into the fixture. Include in your report the per-course reasoning: offered in 202730 yes/no, and prereq status.
+- Storage failures: if the plan file exists but can't be read (permission denied, sandbox, malformed JSON, unknown newer version), every plan tool returns storage_error with the path and reason. NEVER treat a read failure as an empty plan list, and NEVER write over a file you couldn't read. A missing file is the only case that counts as empty.
+
 ## Tools
 
-Every tool returns structured JSON. Names and keys are the same on Windows, Mac, and Linux. Write tools that change a plan return the same object as `get_plan`, plus extra keys where noted. `revision` is the first 16 hex characters of the SHA-256 of the degree plan JSON. Pass it back as `expected_revision`.
+Every tool returns structured JSON. Names and keys are the same on Windows, Mac, and Linux. Write tools that change a plan return the same object as `get_plan`, plus extra keys where noted. `revision` is an integer starting at 1. Pass it back as `expected_revision`.
+
+A tool error is `isError: true` and `structuredContent` of the form below. `message` is never empty.
+
+```json
+{ "error": { "code": "invalid_argument", "message": "name is required." } }
+```
+
+`code` is one of `invalid_argument`, `not_found`, `revision_conflict`, `confirm_required`, `read_only`, `storage_error`, `unknown_tool`.
 
 ### list_terms
 
 No arguments.
 
 ```json
-{ "terms": [ { "code": "202710", "name": "Fall 2026" } ] }
+{ "terms": [ { "term": "202710", "name": "Fall 2026" } ] }
 ```
 
 ### search_courses
@@ -149,7 +170,7 @@ No arguments.
       "days": "MW",
       "times": "MW 9:50 AM to 11:30 AM",
       "location": "SN 108",
-      "instructors": ["Ada Lovelace"],
+      "instructors": [{ "name": "Ada Lovelace", "email": "lovelace@northeastern.edu" }],
       "seats_remaining": 3,
       "seat_capacity": 40
     }
@@ -173,7 +194,7 @@ No arguments.
 
 `term`, `courses` (array of `{ "subject", "number" }`), optional `constraints`:
 
-* `no_classes_before` and `no_classes_after`: `"09:30"`, `"9:30 AM"`, or minutes from midnight.
+* `no_classes_before` and `no_classes_after`: 24-hour `HH:MM` such as `08:00`, 12-hour `8:00 AM` or `8am`, or a JSON number of minutes from midnight. Anything else is `invalid_argument`.
 * `days_off`: array of `U M T W R F S`, full names, or a string such as `MWF`.
 
 Up to 8 schedules, best first.
@@ -193,16 +214,15 @@ Up to 8 schedules, best first.
 
 ### reorganize_plan
 
-Does not save. `plan` is `{ "terms": [ { "term": "Fall 2026", "courses": [ { "subject": "CS", "number": "3000" } ] } ] }`. `term` may be a Banner code.
+Does not save. Pass either `plan_id` or `plan`, not both. `plan` is `{ "terms": [ { "term": "202710", "courses": [ { "subject": "CS", "number": "3000" } ] } ] }`. `term` is a Banner code such as `202710` or `202730`.
 
-The core library only suggests moves for one semester. This tool walks the plan and applies suggestions that do not add a semester, so graduation is not delayed. Courses that would need a new semester are listed in `unresolved`.
+A course moves only into a term the plan already has. The target term's bundled catalog must offer the course, prerequisite order within the plan must be kept, and it never adds a semester. A course is offered in a term when that term's bundled catalog has at least one section of it. Prerequisites that are not on the plan do not block the move.
 
 ```json
 {
-  "terms": [ { "term": "202730", "name": "Spring 2027", "courses": [ { "subject": "CS", "number": "3000", "title": "Algorithms" } ] } ],
-  "moves": [ { "subject": "CS", "number": "3000", "from_term": "Fall 2026", "to_term": "Spring 2027", "reason": "Offered every spring" } ],
-  "unresolved": [],
-  "note": "Whole-plan reorganize is implemented on top of DegreePlanReordering."
+  "moves": [ { "subject": "CS", "number": "3000", "from_term": "Fall 2026", "to_term": "Spring 2027", "reason": "CS 3000 is not offered in Fall 2026. Spring 2027 offers it, and the move keeps prerequisite order without adding a semester." } ],
+  "unresolved": [ { "subject": "CS", "number": "1990", "reason": "CS 1990 is not offered in Fall 2026, and no other term already on the plan offers it." } ],
+  "plan": { "terms": [ { "term": "202730", "name": "Spring 2027", "courses": [ { "subject": "CS", "number": "3000", "title": "Algorithms" } ] } ] }
 }
 ```
 
@@ -216,7 +236,7 @@ The core library only suggests moves for one semester. This tool walks the plan 
       "name": "Primary",
       "terms": [ { "term": "202710", "name": "Fall 2026", "course_count": 2 } ],
       "updated_at": "2026-10-20T00:00:00.0000000+00:00",
-      "revision": "0123456789abcdef"
+      "revision": 1
     }
   ]
 }
@@ -237,7 +257,7 @@ The core library only suggests moves for one semester. This tool walks the plan 
 
 ### create_plan
 
-`name`, optional `terms` (labels or codes). Returns `get_plan`.
+`name`, optional `terms` (a list of term strings such as `202710` and `202730`). Returns `get_plan`. `revision` starts at 1.
 
 ### rename_plan
 
@@ -265,7 +285,7 @@ If the selected CRN is not a section of the course in the destination term, the 
 
 ### apply_reorganize
 
-`plan_id`, `expected_revision`. Destructive. Runs `reorganize_plan` and saves. Returns `get_plan` plus `moves`, `unresolved`, and `note`.
+`plan_id`, `expected_revision`. Destructive. Runs `reorganize_plan` and saves. Returns `get_plan` plus `moves` and `unresolved`.
 
 ### delete_plan
 

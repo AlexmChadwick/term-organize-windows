@@ -135,6 +135,16 @@ public static class DegreePlanAnalysis
             var repeatsCompleted = plan.Completed.Any(done => done.Key == key && !CountsSeparately(done, course));
             if (repeatsPlanned || repeatsCompleted) duplicates.Add(key);
         }
+        var completed = plan.Completed;
+        for (var index = 0; index < completed.Count; index++)
+        {
+            var course = completed[index];
+            if (course.Key is not CourseKey key) continue;
+            var repeatsEarlier = false;
+            for (var earlier = 0; earlier < index && !repeatsEarlier; earlier++)
+                repeatsEarlier = completed[earlier].Key == key && !CountsSeparately(completed[earlier], course);
+            if (repeatsEarlier) duplicates.Add(key);
+        }
         return duplicates;
     }
 

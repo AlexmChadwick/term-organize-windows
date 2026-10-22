@@ -207,7 +207,7 @@ public class SectionPinTests
     }
 
     [Fact]
-    public void RepeatedCoursesRequireDistinctManualCrns()
+    public void RepeatedCoursesAreAllowedAndWarnedWhenTheyDoNotCountSeparately()
     {
         var plan = new DegreePlan
         {
@@ -216,16 +216,17 @@ public class SectionPinTests
         };
         var termId = plan.Terms[0].Id;
         Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4), termId, plan));
-        Assert.False(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4), termId, plan));
-        Assert.False(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4) { SelectedCrn = "11111" }, termId, plan));
-        Assert.Single(plan.Terms[0].Courses);
+        Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4), termId, plan));
+        Assert.Equal(new HashSet<CourseKey> { Directed }, DegreePlanAnalysis.DuplicateKeys(plan));
+        Assert.Equal(4, DegreeAudit.Run(plan, new ProgramRequirements()).PlannedHours);
 
         plan.Terms[0].Courses.Clear();
         Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4) { SelectedCrn = "11111" }, termId, plan));
         Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4) { SelectedCrn = "22222" }, termId, plan));
-        Assert.False(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4) { SelectedCrn = "22222" }, termId, plan));
-        Assert.False(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4), termId, plan));
-        Assert.Equal(8, plan.Terms[0].Credits);
+        Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4) { SelectedCrn = "22222" }, termId, plan));
+        Assert.Equal(12, plan.Terms[0].Credits);
+        Assert.Equal(new HashSet<CourseKey> { Directed }, DegreePlanAnalysis.DuplicateKeys(plan));
+        plan.Terms[0].Courses.RemoveAt(2);
         Assert.Empty(DegreePlanAnalysis.DuplicateKeys(plan));
 
         var same = new DegreePlan
@@ -334,8 +335,12 @@ public class SectionPinTests
             };
             var built = DegreePlanSchedule.ForSemester(semester, "202730", store);
             Assert.NotNull(built);
-            Assert.Equal(["CS 4973", "MATH 2331"], built.Value.Plan.Courses.Select(course => course.Key.ToString()));
+            Assert.Equal(["CS 4973", "CS 4973", "MATH 2331"], built.Value.Plan.Courses.Select(course => course.Key.ToString()));
+            Assert.Equal(["11111", "22222"], built.Value.Plan.Courses.Take(2).Select(course => course.PinnedCrn));
             Assert.Equal(["11111", "22222"], built.Value.Plan.SelectedCRNs);
+            var inputs = ScheduleCourseInputs.Inputs(built.Value.Plan, TopicsIndex());
+            Assert.Equal(3, inputs.Count);
+            Assert.Equal(["11111", "22222"], inputs.Take(2).Select(item => item.PinnedCrn));
             var again = DegreePlanSchedule.ForSemester(semester, "202730", store);
             Assert.NotNull(again);
             Assert.False(again.Value.IsNew);
@@ -348,13 +353,28 @@ public class SectionPinTests
     }
 
     [Fact]
-    public void AScheduleWithTwoPinsBecomesTwoDegreeCourses()
+    public void EachScheduleRowBecomesOneDegreeRow()
     {
         var index = TopicsIndex();
-        var schedule = Schedule(["CS 4973"], ["11111", "22222"]);
-        schedule.IsPrimary = true;
-        schedule.TermCode = "202730";
-        var draft = DegreePlanAutofill.NewDegreePlanDraft("Next", null, [schedule], code => code == "202730" ? index : null, new DateTimeOffset(2026, 10, 21, 0, 0, 0, TimeSpan.Zero));
+        var when = new DateTimeOffset(2026, 10, 21, 0, 0, 0, TimeSpan.Zero);
+        var one = Schedule(["CS 4973"], ["11111", "22222"]);
+        one.IsPrimary = true;
+        one.TermCode = "202730";
+        var single = DegreePlanAutofill.NewDegreePlanDraft("Next", null, [one], code => code == "202730" ? index : null, when);
+        Assert.Single(single.Terms.SelectMany(term => term.Courses));
+
+        var two = new SchedulePlan
+        {
+            Name = "Topics",
+            TermCode = "202730",
+            IsPrimary = true,
+            Courses =
+            [
+                new PlanCourse { Key = Topics, PinnedCrn = "11111" },
+                new PlanCourse { Key = Topics, PinnedCrn = "22222" },
+            ],
+        };
+        var draft = DegreePlanAutofill.NewDegreePlanDraft("Next", null, [two], code => code == "202730" ? index : null, when);
         var courses = draft.Terms.SelectMany(term => term.Courses).ToList();
         Assert.Equal(2, courses.Count);
         Assert.All(courses, course => Assert.Equal(Topics, course.Key));

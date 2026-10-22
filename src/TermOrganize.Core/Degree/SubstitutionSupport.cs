@@ -133,12 +133,13 @@ public static class DegreeSubstitutionEditing
         IReadOnlyCollection<CourseKey> specificCourses,
         CourseNumberLimit? courseNumbers,
         ProgramRequirements? requirements,
-        string ruleTitle)
+        string ruleTitle,
+        Guid? rowId = null)
     {
         switch (kind)
         {
             case DegreeSubstitutionRequest.Kind.CountCourse:
-                return course is CourseKey key ? SubstitutionChange.CountCourse(key) : null;
+                return course is CourseKey key ? SubstitutionChange.CountCourse(key, rowId) : null;
             case DegreeSubstitutionRequest.Kind.Replace:
                 string? likeTitle = null;
                 if (likeRuleId is not null)

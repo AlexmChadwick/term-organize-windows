@@ -459,7 +459,8 @@ internal sealed class DegreeRequirementsPane : UserControl
         if (kind == DegreeSubstitutionRequest.Kind.CountCourse)
         {
             courses = new ComboBox { Header = "Course on this plan", HorizontalAlignment = HorizontalAlignment.Stretch };
-            foreach (var choice in _plan.DegreeCourseChoices()) courses.Items.Add(new CourseChoice(choice.Key, $"{choice.Key} {choice.Title}"));
+            foreach (var choice in _plan.DegreeCourseRows())
+                courses.Items.Add(new CourseChoice(choice.Key, choice.Id, _plan.DuplicateRowLabel(choice)));
             if (courses.Items.Count > 0) courses.SelectedIndex = 0;
             panel.Children.Add(courses);
         }
@@ -539,7 +540,8 @@ internal sealed class DegreeRequirementsPane : UserControl
                 args.Cancel = true;
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || _plan is null) return;
-        var courseKey = (courses?.SelectedItem as CourseChoice)?.Key;
+            var selectedCourse = courses?.SelectedItem as CourseChoice;
+            var courseKey = selectedCourse?.Key;
         var likeRule = (like?.SelectedItem as RuleChoice)?.Id;
         CourseNumberLimit? courseNumbers = null;
         if (numbers is { Visibility: Visibility.Visible } && numbers.SelectedItem is NumberChoice picked)
@@ -554,7 +556,8 @@ internal sealed class DegreeRequirementsPane : UserControl
             specific,
             courseNumbers,
             _requirements,
-            result.Rule.DisplayLabel);
+            result.Rule.DisplayLabel,
+            selectedCourse?.RowId);
         if (change is null) return;
         var substitution = DegreeSubstitutionEditing.Substitution(request, change, note.Text, approved.Date);
         _session.Store.UpdateDegreePlan(_plan.Id, stored => DegreeSubstitutionEditing.Store(substitution, stored));
@@ -715,7 +718,7 @@ internal sealed class DegreeRequirementsPane : UserControl
         public override string ToString() => Filter.Title();
     }
 
-    private sealed record CourseChoice(CourseKey Key, string Label)
+    private sealed record CourseChoice(CourseKey Key, Guid RowId, string Label)
     {
         public override string ToString() => Label;
     }

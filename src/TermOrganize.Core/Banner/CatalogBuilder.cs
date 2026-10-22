@@ -66,6 +66,11 @@ public static class CatalogBuilder
                 Description = prior?.Description,
                 Prereqs = prior?.Prereqs,
                 Coreqs = prior?.Coreqs,
+                CreditHours = section.CreditHours,
+                CreditLow = section.CreditHourLow,
+                CreditHigh = section.CreditHourHigh,
+                CreditHourIndicator = section.CreditHourIndicator.NilIfBlank(),
+                Restrictions = prior?.Restrictions,
             });
         }
         return result;
@@ -88,6 +93,8 @@ public static class CatalogBuilder
             foreach (var attribute in sectionAttributes)
                 attributes[attribute.Code] = HtmlText.DecodeEntities(attribute.Description ?? attribute.Code).Trim();
             var isTopics = sectionAttributes.Any(attribute => attribute.Code == "TOPC");
+            var span = VariableCredits.FromBanner(section.CreditHours, section.CreditHourLow, section.CreditHourHigh);
+            var variable = section.CreditHourHigh is double high && high != (section.CreditHourLow ?? section.CreditHours ?? high);
             if (courses.TryGetValue(key, out var existing))
             {
                 existing.Attributes = existing.Attributes
@@ -100,19 +107,20 @@ public static class CatalogBuilder
                     existing.SpecialTopics = true;
                     existing.Title = "Special Topics";
                 }
+                ApplySpan(existing, span, variable);
             }
             else
             {
                 var special = title.Contains("Special Topics", StringComparison.OrdinalIgnoreCase) || isTopics;
-                var low = section.CreditHourLow ?? section.CreditHours ?? 0;
                 courses[key] = new Course
                 {
                     Subject = section.Subject,
                     Number = section.CourseNumber,
                     Title = special ? "Special Topics" : title,
                     Description = "",
-                    MinCredits = low,
-                    MaxCredits = section.CreditHourHigh ?? low,
+                    MinCredits = span.Low,
+                    MaxCredits = span.High,
+                    DefaultCredits = span.DefaultHours,
                     Attributes = sectionAttributes.Select(attribute => attribute.Code).Where(code => code != BannerAttributes.Honors).OrderBy(code => code, StringComparer.Ordinal).ToList(),
                     Postreqs = [],
                     SpecialTopics = special,
@@ -161,6 +169,7 @@ public static class CatalogBuilder
             {
                 known.MinCredits = stub.MinCredits;
                 known.MaxCredits = stub.MaxCredits;
+                known.DefaultCredits = stub.DefaultCredits;
                 known.Attributes = stub.Attributes;
                 known.SpecialTopics = known.SpecialTopics || stub.SpecialTopics;
                 courses.Add(known);
@@ -170,6 +179,7 @@ public static class CatalogBuilder
             {
                 borrowed.MinCredits = stub.MinCredits;
                 borrowed.MaxCredits = stub.MaxCredits;
+                borrowed.DefaultCredits = stub.DefaultCredits;
                 borrowed.Attributes = stub.Attributes;
                 borrowed.SpecialTopics = borrowed.SpecialTopics || stub.SpecialTopics;
                 borrowed.Postreqs = [];
@@ -214,11 +224,35 @@ public static class CatalogBuilder
             var key = a.CourseKey.CompareTo(b.CourseKey);
             return key != 0 ? key : string.CompareOrdinal(a.SectionNumber, b.SectionNumber);
         });
-        if (!catalog.Courses.Any(item => item.Key == course) && banner.Count > 0)
+        if (banner.Count > 0)
         {
             var (stubs, _) = StubCourses(banner);
-            catalog.Courses.AddRange(stubs);
-            catalog.Courses.Sort((a, b) => a.Key.CompareTo(b.Key));
+            var stub = stubs.FirstOrDefault(item => item.Key == course);
+            var listed = catalog.Courses.FirstOrDefault(item => item.Key == course);
+            if (listed is null)
+            {
+                catalog.Courses.AddRange(stubs);
+                catalog.Courses.Sort((a, b) => a.Key.CompareTo(b.Key));
+            }
+            else if (stub is not null)
+            {
+                listed.MinCredits = stub.MinCredits;
+                listed.MaxCredits = stub.MaxCredits;
+                listed.DefaultCredits = stub.DefaultCredits;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A variable section replaces the course range. A later fixed section does not shrink a range already stored.
+    /// </summary>
+    private static void ApplySpan(Course course, CreditSpan span, bool variable)
+    {
+        if (variable || (course.MinCredits == 0 && course.MaxCredits == 0))
+        {
+            course.MinCredits = span.Low;
+            course.MaxCredits = span.High;
+            if (span.DefaultHours != 0) course.DefaultCredits = span.DefaultHours;
         }
     }
 

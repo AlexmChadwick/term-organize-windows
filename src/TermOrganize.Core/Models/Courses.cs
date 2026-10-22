@@ -13,6 +13,8 @@ public sealed class Course
     public string Description { get; set; } = "";
     public double MinCredits { get; set; }
     public double MaxCredits { get; set; }
+    /// <summary>Banner's <c>creditHours</c> default. Zero means a bundled catalog did not store one.</summary>
+    public double DefaultCredits { get; set; }
     public List<string> Attributes { get; set; } = [];
     public Requisite? Prereqs { get; set; }
     public Requisite? Coreqs { get; set; }
@@ -41,6 +43,8 @@ public sealed class Course
     [JsonIgnore] public CourseKey Key => new(Subject, Number);
     [JsonIgnore] public string Code => Key.ToString();
     [JsonIgnore] public string CreditsLabel => CreditFormatter.Label(MinCredits, MaxCredits);
+    [JsonIgnore] public bool IsVariableCredit => MaxCredits != MinCredits;
+    [JsonIgnore] public double StartingCredits => VariableCredits.Of(this).Starting;
     [JsonIgnore] public IReadOnlyList<NUPath> Nupaths => NUPathInfo.FromAttributeCodes(Attributes);
 }
 
@@ -160,6 +164,14 @@ public sealed class CourseSection
     public string? Description { get; set; }
     public Requisite? Prereqs { get; set; }
     public Requisite? Coreqs { get; set; }
+    public double? CreditLow { get; set; }
+    public double? CreditHigh { get; set; }
+    public double? CreditHours { get; set; }
+    public string? CreditHourIndicator { get; set; }
+    /// <summary>Null until the restrictions page has been loaded. An empty list is a loaded section with no lists.</summary>
+    public List<SectionRestriction>? Restrictions { get; set; }
+
+    [JsonIgnore] public bool? CpsOnly => SectionRestrictions.CpsOnly(Restrictions);
 
     [JsonIgnore] public string Id => Crn;
     [JsonIgnore] public CourseKey CourseKey => new(Subject, Number);

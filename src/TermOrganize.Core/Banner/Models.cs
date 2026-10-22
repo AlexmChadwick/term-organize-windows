@@ -53,6 +53,7 @@ public sealed class BannerSection
     public string? ScheduleTypeDescription { get; set; }
     public string? CourseTitle { get; set; }
     public double? CreditHours { get; set; }
+    public string? CreditHourIndicator { get; set; }
     public int? MaximumEnrollment { get; set; }
     public int? Enrollment { get; set; }
     public int? SeatsAvailable { get; set; }

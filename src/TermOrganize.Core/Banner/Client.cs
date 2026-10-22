@@ -336,6 +336,9 @@ public sealed class BannerClient : IDisposable
     public Task<string> FetchPrerequisitesHtmlAsync(string term, string crn, CancellationToken cancellationToken = default) =>
         PostFormAsync("searchResults/getSectionPrerequisites", term, crn, cancellationToken);
 
+    public Task<string> FetchRestrictionsHtmlAsync(string term, string crn, CancellationToken cancellationToken = default) =>
+        PostFormAsync("searchResults/getRestrictions", term, crn, cancellationToken);
+
     public Task<string> FetchCorequisitesHtmlAsync(string term, string crn, CancellationToken cancellationToken = default) =>
         PostFormAsync("searchResults/getCorequisites", term, crn, cancellationToken);
 
@@ -663,6 +666,7 @@ public sealed class BannerClient : IDisposable
         Description = course.Description,
         MinCredits = course.MinCredits,
         MaxCredits = course.MaxCredits,
+        DefaultCredits = course.DefaultCredits,
         Attributes = course.Attributes.ToList(),
         Prereqs = course.Prereqs,
         Coreqs = course.Coreqs,

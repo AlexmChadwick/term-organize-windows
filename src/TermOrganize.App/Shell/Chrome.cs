@@ -63,6 +63,15 @@ internal static class Chrome
         Opacity = 0.85,
     };
 
+    /// <summary>Secondary note. Lighter than body text so it stays readable on light and dark fills.</summary>
+    public static TextBlock Caption(string text) => new()
+    {
+        Text = text,
+        TextWrapping = TextWrapping.Wrap,
+        Opacity = 0.65,
+        FontSize = 12,
+    };
+
     /// <summary>
     /// A fixed-height scroller. An unconstrained ScrollViewer grows with its content, so a dialog
     /// footer below it would sit past the window.
@@ -189,6 +198,16 @@ internal static class Chrome
         panel.Children.Clear();
         panel.Children.Add(Heading(title));
         panel.Children.Add(Body(message));
+    }
+
+    public static void Fill(Grid host, string title, string message)
+    {
+        host.Children.Clear();
+        host.RowDefinitions.Clear();
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(Heading(title));
+        panel.Children.Add(Body(message));
+        host.Children.Add(panel);
     }
 
     public static Brush ThemedBrush(ElementTheme theme, string key, Color fallback)

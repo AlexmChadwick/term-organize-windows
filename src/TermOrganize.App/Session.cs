@@ -96,6 +96,7 @@ public sealed class AppSession
         _indexes[rebuilt.Term.Code] = rebuilt;
         Index = rebuilt;
         Term = rebuilt.Term;
+        ClampCredits();
     }
 
     public IReadOnlyList<CourseSection> Sections(CourseKey key) => Index?.Sections(key) ?? [];
@@ -105,6 +106,18 @@ public sealed class AppSession
         var index = CatalogIndex.Build(catalog);
         _indexes[catalog.Term.Code] = index;
         Use(index, null);
+        ClampCredits();
+    }
+
+    private void ClampCredits()
+    {
+        VariableCredits.ClampStored(Store, key =>
+        {
+            if (Index?.Course(key) is Course current) return current;
+            foreach (var index in IndexesNewestFirst())
+                if (index.Course(key) is Course course) return course;
+            return null;
+        });
     }
 
     private void Use(CatalogIndex index, string? error)

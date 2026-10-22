@@ -67,6 +67,8 @@ public sealed class PlanCourse
     public string? PinnedCrn { get; set; }
     /// <summary>The degree-plan row this schedule row was copied from, when sync created it.</summary>
     public Guid? DegreeRowId { get; set; }
+    /// <summary>Chosen credits for a variable-credit row. Null on older saves, which take the catalog default.</summary>
+    public double? Credits { get; set; }
     [JsonIgnore] public CourseKey Id => Key;
 }
 
@@ -135,6 +137,8 @@ public sealed class AppPreferences
     /// <summary>Minutes between seat checks while the app is open. The Mac app defaults to 15.</summary>
     public int SeatCheckMinutes { get; set; } = 15;
     public bool NotifyOnSeats { get; set; } = true;
+    /// <summary>Search split at course number 5000. All leaves every number in the results.</summary>
+    public CourseDivision CourseDivision { get; set; } = CourseDivision.All;
 }
 
 public enum PlanSeason

@@ -449,6 +449,13 @@ public sealed class ResolvedPlan
         foreach (var entry in entries.Where(entry => entry.CountsTowardsCredits))
         {
             if (entry.Course is null) continue;
+            if (entry.Course.IsVariableCredit)
+            {
+                var chosen = VariableCredits.Exact(entry.Course, entry.PlanCourse.Credits) ?? entry.Course.StartingCredits;
+                low += chosen;
+                high += chosen;
+                continue;
+            }
             var copies = Math.Max(1, entry.Selected.Count);
             low += entry.Course.MinCredits * copies;
             high += entry.Course.MaxCredits * copies;

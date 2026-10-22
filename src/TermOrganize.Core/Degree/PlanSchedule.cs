@@ -55,6 +55,7 @@ public static class DegreePlanSchedule
                     ColorIndex = schedule.NextColorIndex,
                     PinnedCrn = pin,
                     DegreeRowId = course.Id,
+                    Credits = course.Credits > 0 ? course.Credits : null,
                 });
                 if (pin is not null && !schedule.SelectedCRNs.Contains(pin))
                 {
@@ -67,6 +68,7 @@ public static class DegreePlanSchedule
             used.Add(index);
             var row = schedule.Courses[index];
             row.DegreeRowId = course.Id;
+            if (course.Credits > 0) row.Credits = course.Credits;
             if (pin is null || string.Equals(DegreeCourseRepeats.CleanCrn(row.PinnedCrn), pin, StringComparison.Ordinal)) continue;
             row.PinnedCrn = pin;
             if (schedule.SelectedCRNs.Contains(pin)) continue;
@@ -100,6 +102,28 @@ public static class DegreePlanSchedule
             added++;
         }
         return added;
+    }
+
+    /// <summary>Copies each schedule row's chosen credits onto the degree row it was synced from. Rows are not added or merged.</summary>
+    public static int PullCredits(DegreePlan plan, SchedulePlan schedule)
+    {
+        var changed = 0;
+        foreach (var row in schedule.Courses)
+        {
+            if (row.DegreeRowId is not Guid id || row.Credits is not double credits) continue;
+            foreach (var term in plan.Terms)
+            {
+                var match = term.Courses.FirstOrDefault(course => course.Id == id);
+                if (match is null) continue;
+                if (Math.Abs(match.Credits - credits) > 1e-6)
+                {
+                    match.Credits = credits;
+                    changed++;
+                }
+                break;
+            }
+        }
+        return changed;
     }
 
     private static bool RowsMatch(SchedulePlan plan, List<DegreePlanCourse> rows)

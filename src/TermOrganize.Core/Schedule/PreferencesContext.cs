@@ -46,8 +46,9 @@ public sealed class SchedulePreferencesContext
         foreach (var planCourse in plan.Courses)
         {
             var course = index.Course(planCourse.Key);
-            var least = (int)Math.Ceiling(course?.MinCredits ?? 0);
-            var most = (int)Math.Ceiling(course?.MaxCredits ?? 0);
+            var exact = VariableCredits.Exact(course, planCourse.Credits);
+            var least = (int)Math.Ceiling(exact ?? course?.MinCredits ?? 0);
+            var most = (int)Math.Ceiling(exact ?? course?.MaxCredits ?? 0);
             if (planCourse.IsRequired) RequiredCredits += least;
             else OptionalCourseCount++;
             TotalCredits += Math.Max(least, most);

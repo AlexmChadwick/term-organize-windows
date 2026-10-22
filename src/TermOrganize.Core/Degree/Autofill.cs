@@ -191,7 +191,9 @@ public static class DegreePlanAutofill
             {
                 var course = index?.Course(planCourse.Key);
                 var title = DegreePlanFormat.ExportTitle(course?.Title ?? planCourse.Key.ToString());
-                var credits = course?.MaxCredits ?? 4;
+                var credits = planCourse.Credits is double chosen && chosen > 0
+                    ? chosen
+                    : course?.StartingCredits ?? course?.MaxCredits ?? 4;
                 var pin = ChosenPin(planCourse, plan, index);
                 var match = pool
                     .Where(row => row.Key == planCourse.Key && !claimed.Contains(row.Id))
@@ -205,6 +207,8 @@ public static class DegreePlanAutofill
                     claimed.Add(match.Id);
                     if (pin is not null && DegreeCourseRepeats.CleanCrn(match.SelectedCrn) is null)
                         match.SelectedCrn = pin;
+                    if (planCourse.Credits is double chosenCredits && chosenCredits > 0)
+                        match.Credits = chosenCredits;
                     continue;
                 }
                 var added = new DegreePlanCourse(planCourse.Key, title, credits) { SelectedCrn = pin };

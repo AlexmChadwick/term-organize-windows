@@ -413,30 +413,48 @@ internal sealed class DegreeRequirementsPane : UserControl
             TextWrapping = TextWrapping.Wrap,
         });
         if (info.Caption is string caption) row.Children.Add(Chrome.Body(caption));
-        if (info.AddKey is CourseKey add && !info.Status.IsInPlan)
+        CourseKey? target = info.AddKey is CourseKey add && !info.Status.IsInPlan ? add : null;
+        if (target is null && Listed(key)) target = key;
+        if (target is CourseKey courseKey)
         {
-            var button = new Button { Content = "Add to plan", HorizontalAlignment = HorizontalAlignment.Left };
-            button.Click += (_, _) => AddToPlan(add, lookup.TitleOf(add) ?? title ?? "", lookup.CreditsOf(add) ?? 4);
-            row.Children.Add(button);
+            var repeat = Listed(courseKey);
+            var crn = new TextBox { PlaceholderText = "CRN", Width = 88 };
+            var button = new Button
+            {
+                Content = repeat ? "Add again" : "Add to plan",
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            button.Click += (_, _) => AddToPlan(courseKey, lookup.TitleOf(courseKey) ?? title ?? "", lookup.CreditsOf(courseKey) ?? 4, crn.Text);
+            var actions = new WrapLayout { Spacing = 8 };
+            actions.Children.Add(crn);
+            actions.Children.Add(button);
+            row.Children.Add(actions);
         }
         return row;
     }
 
-    private void AddToPlan(CourseKey key, string title, double credits)
+    private bool Listed(CourseKey key) =>
+        _plan is not null && (_plan.Completed.Any(course => course.Key == key)
+            || _plan.Terms.Any(term => term.Courses.Any(course => course.Key == key)));
+
+    private void AddToPlan(CourseKey key, string title, double credits, string? crn = null)
     {
         if (_plan is null) return;
-        var targets = DegreeRequirementsLookup.AddTargets(_plan);
-        if (targets.Count == 0) return;
-        var term = targets[0];
+        var selected = DegreeCourseRepeats.CleanCrn(crn);
+        var holding = DegreePlanEditing.TermWith(key, _plan);
+        var term = holding ?? DegreeRequirementsLookup.AddTargets(_plan).FirstOrDefault();
+        if (term is null) return;
         var added = false;
         _session.Store.UpdateDegreePlan(_plan.Id, plan =>
         {
-            var destination = plan.Terms.FirstOrDefault(item => item.Season == term.Season && item.Year == term.Year) ?? term;
-            added = DegreePlanEditing.AddCourse(new DegreePlanCourse(key, title, credits), destination, plan);
+            var destination = plan.Terms.FirstOrDefault(item => item.Id == term.Id)
+                ?? plan.Terms.FirstOrDefault(item => item.Season == term.Season && item.Year == term.Year)
+                ?? term;
+            added = DegreePlanEditing.AddCourse(new DegreePlanCourse(key, title, credits) { SelectedCrn = selected }, destination, plan);
         });
         _window.SetStatus(added
-            ? $"Added {key} to {term.Name}."
-            : $"{key} is already on this plan. A second listing needs its own CRN.");
+            ? selected is null ? $"Added {key} to {term.Name}." : $"Added {key} (CRN {selected}) to {term.Name}."
+            : DegreeCourseEntries.BlockReason(_plan, key, selected) ?? $"{key} could not be added.");
         PaintAudit();
         _onEdited?.Invoke();
     }

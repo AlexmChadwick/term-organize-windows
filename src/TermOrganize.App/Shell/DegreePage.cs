@@ -285,7 +285,10 @@ public sealed class DegreePage : UserControl
             };
         }
         var line = course.Key?.ToString() ?? course.Label;
-        row.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
+        var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+        row.Children.Add(Chrome.Body(pin is null
+            ? $"{line}  {course.Title}  ({course.Credits:0.#})"
+            : $"{line}  {course.Title}  ({course.Credits:0.#})  CRN {pin}"));
         var buttons = new WrapLayout { Spacing = 8 };
         var id = course.Id;
         if (!completed)
@@ -312,6 +315,22 @@ public sealed class DegreePage : UserControl
         };
         buttons.Children.Add(remove);
         row.Children.Add(buttons);
+        var crnBox = new TextBox { PlaceholderText = "CRN", Width = 88, Text = course.SelectedCrn ?? "" };
+        var saveCrn = new Button { Content = "Save CRN" };
+        saveCrn.Click += (_, _) =>
+        {
+            if (_plan is null) return;
+            var text = crnBox.Text;
+            var saved = false;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan => saved = DegreePlanEditing.SetSelectedCrn(id, text, plan));
+            if (!saved && course.Key is CourseKey courseKey)
+                _window.SetStatus(DegreeCourseEntries.BlockReason(_plan, courseKey, text, id) ?? "That CRN could not be saved.");
+            ShowPlan();
+        };
+        var crnRow = new WrapLayout { Spacing = 8 };
+        crnRow.Children.Add(crnBox);
+        crnRow.Children.Add(saveCrn);
+        row.Children.Add(crnRow);
         if (course.Key is CourseKey key)
         {
             var counts = new TextBox { PlaceholderText = "Counts as, for example CS 2500", Width = 220 };
@@ -333,6 +352,7 @@ public sealed class DegreePage : UserControl
     private WrapLayout AddCourseRow()
     {
         var add = new TextBox { PlaceholderText = "Add a course, such as CS 3000", MinWidth = 160 };
+        var crn = new TextBox { PlaceholderText = "CRN", Width = 88 };
         var termBox = new ComboBox { MinWidth = 140 };
         if (_plan is not null)
         {
@@ -345,14 +365,17 @@ public sealed class DegreePage : UserControl
             if (_plan is null || CourseKey.Parse(add.Text) is not CourseKey key || termBox.SelectedItem is not TermChoice choice) return;
             var title = _session.Index?.Course(key)?.Title ?? "";
             var credits = _session.Index?.Course(key)?.MaxCredits ?? 4;
+            var selected = DegreeCourseRepeats.CleanCrn(crn.Text);
             var added = false;
             _session.Store.UpdateDegreePlan(_plan.Id, plan =>
-                added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
-            if (!added) _window.SetStatus($"{key} is already on this plan. A second listing needs its own CRN.");
+                added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits) { SelectedCrn = selected }, choice.Term.Id, plan));
+            if (!added) _window.SetStatus(DegreeCourseEntries.BlockReason(_plan, key, selected) ?? $"{key} could not be added.");
+            else crn.Text = "";
             ShowPlan();
         };
         var row = new WrapLayout { Spacing = 8 };
         row.Children.Add(add);
+        row.Children.Add(crn);
         row.Children.Add(termBox);
         row.Children.Add(button);
         return row;

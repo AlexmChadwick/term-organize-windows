@@ -24,22 +24,6 @@ public static class DegreeCourseEntries
         return true;
     }
 
-    /// <summary>
-    /// Why a listing cannot be added or its CRN changed. Null when <see cref="Allows"/> accepts it.
-    /// The degree editor shows this text when Add or Save CRN does nothing.
-    /// </summary>
-    public static string? BlockReason(DegreePlan plan, CourseKey key, string? crn, Guid? ignoreId = null)
-    {
-        if (Allows(plan, key, crn, ignoreId)) return null;
-        var incoming = DegreeCourseRepeats.CleanCrn(crn);
-        var others = Others(plan, key, ignoreId);
-        if (incoming is null)
-            return $"{key} is already on this plan. A second listing needs its own CRN.";
-        if (others.Any(other => DegreeCourseRepeats.CleanCrn(other.SelectedCrn) is null))
-            return $"{key} is already on this plan. Set a CRN on each existing listing before adding another.";
-        return $"{key} already uses CRN {incoming}.";
-    }
-
     private static List<DegreePlanCourse> Others(DegreePlan plan, CourseKey key, Guid? ignoreId)
     {
         var others = new List<DegreePlanCourse>();

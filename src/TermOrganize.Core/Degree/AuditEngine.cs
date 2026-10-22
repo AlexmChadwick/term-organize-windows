@@ -92,18 +92,20 @@ internal sealed class AuditEngine
             var earlier = _instances.TryGetValue(key, out var prior)
                 ? prior.Select(id => _pool[id]).ToList()
                 : [];
-            use.Instance = earlier.Count;
-            var twin = earlier.FirstOrDefault(other => !CountsSeparately(use, other));
-            use.CountsTowardHours = twin is null;
-            if (twin is not null)
+            // A line with no credit is a placeholder, not a second course. Every other copy
+            // counts on its own, including two seminars with the same title or the same CRN.
+            // DuplicateKeys still warns about those. It does not drop them from the audit.
+            if (use.Credits <= 0 && earlier.FirstOrDefault() is DegreeAudit.CourseUse repeated)
             {
-                var better = twin.IsCompleted == use.IsCompleted ? use.Credits > twin.Credits : use.IsCompleted;
+                var better = repeated.IsCompleted == use.IsCompleted ? use.Credits > repeated.Credits : use.IsCompleted;
                 if (better)
                 {
-                    twin.CountsTowardHours = false;
-                    use.CountsTowardHours = true;
+                    use.Instance = repeated.Instance;
+                    _pool[use.Id] = use;
                 }
+                return;
             }
+            use.Instance = earlier.Count;
             _pool[use.Id] = use;
             if (!_instances.TryGetValue(key, out var list)) _instances[key] = list = [];
             list.Add(use.Id);
@@ -1356,10 +1358,6 @@ internal sealed class AuditEngine
 
     private bool CountsCourses(RequirementRule rule) =>
         _effective.GetValueOrDefault(rule.Id) is Effective.KindEffective { RuleKind: RequirementKind.Choose { Count: not null } };
-
-    private static bool CountsSeparately(DegreeAudit.CourseUse a, DegreeAudit.CourseUse b) =>
-        DegreeCourseRepeats.DistinctManualCrns(a.SelectedCrn, b.SelectedCrn) ||
-        DegreeCourseRepeats.CountsSeparately(a.Title, a.Credits, b.Title, b.Credits);
 
     private static bool IsCoop(DegreeAudit.CourseUse use) =>
         use.Key.Subject == "COOP" || CoopTitlePattern().IsMatch(use.Title);

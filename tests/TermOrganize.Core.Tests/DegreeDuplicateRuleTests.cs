@@ -26,7 +26,8 @@ public class DegreeDuplicateRuleTests
             Terms = [new DegreePlanTerm { Season = PlanSeason.Fall, Year = 2026, Courses = [first, second] }],
         };
         Assert.Equal(new HashSet<CourseKey> { Directed }, DegreePlanAnalysis.DuplicateKeys(plan));
-        Assert.Equal(4, DegreeAudit.Run(plan, requirements).PlannedHours);
+        Assert.Equal("1 course appears more than once in this plan. Each copy still counts.", DegreePlanAnalysis.RepeatHeader(plan));
+        Assert.Equal(8, DegreeAudit.Run(plan, requirements).PlannedHours);
 
         plan.Substitutions =
         [
@@ -44,7 +45,61 @@ public class DegreeDuplicateRuleTests
         Assert.Equal(8, audit.PlannedHours);
         Assert.Equal(2, plan.DegreeCourseRows().Count(row => row.Key == Directed));
         Assert.Equal($"CS 4990 Directed Study \u00b7 Fall 2026 (2)", plan.DuplicateRowLabel(plan.DegreeCourseRows()[1]));
+        Assert.Equal(["CS 4990", "CS 4990 (2)"], audit.Result(electives.Id)!.Used.Select(use => use.Id).OrderBy(id => id, StringComparer.Ordinal));
     }
+
+    [Fact]
+    public void EveryCreditedCopyCountsAndRepeatsStillWarn()
+    {
+        var seminar = new CourseKey("CS", "4973");
+        var open = Plan(seminar, "Seminar", null, null);
+        var openAudit = DegreeAudit.Run(open, new ProgramRequirements());
+        Assert.Equal(8, openAudit.PlannedHours);
+        Assert.Equal(["CS 4973", "CS 4973 (2)"], openAudit.Unused.Select(use => use.Id).OrderBy(id => id, StringComparer.Ordinal));
+        Assert.Equal(new HashSet<CourseKey> { seminar }, DegreePlanAnalysis.DuplicateKeys(open));
+        Assert.Equal("Already in Fall 2026. Adding it again keeps both copies.", DegreePlanAnalysis.AddRepeatNote(open, seminar, open.Terms[0]));
+
+        var same = Plan(seminar, "Seminar", "11111", "11111");
+        Assert.Equal(8, DegreeAudit.Run(same, new ProgramRequirements()).PlannedHours);
+        Assert.Equal(new HashSet<CourseKey> { seminar }, DegreePlanAnalysis.DuplicateKeys(same));
+        Assert.Equal("CS 4973 appears more than once. Each copy still counts.", DegreePlanAnalysis.RepeatMessage(seminar));
+
+        var distinct = Plan(seminar, "Seminar", "11111", "22222");
+        Assert.Equal(8, DegreeAudit.Run(distinct, new ProgramRequirements()).PlannedHours);
+        Assert.Empty(DegreePlanAnalysis.DuplicateKeys(distinct));
+        Assert.Null(DegreePlanAnalysis.RepeatHeader(distinct));
+
+        var topics = Plan(seminar, "Topics in Computer Science", null, null);
+        Assert.Equal(8, DegreeAudit.Run(topics, new ProgramRequirements()).PlannedHours);
+        Assert.Empty(DegreePlanAnalysis.DuplicateKeys(topics));
+
+        var second = new DegreePlan
+        {
+            Terms = [new DegreePlanTerm { Season = PlanSeason.Spring, Year = 2027, Courses = [new DegreePlanCourse(new CourseKey("EECE", "2160"), "Embedded", 4), new DegreePlanCourse(new CourseKey("EECE", "2160"), "Embedded", 4)] }],
+        };
+        Assert.Equal("2 courses appear more than once in this plan. Each copy still counts.", DegreePlanAnalysis.RepeatHeader(new DegreePlan
+        {
+            Terms = [open.Terms[0], second.Terms[0]],
+        }));
+    }
+
+    private static DegreePlan Plan(CourseKey key, string title, string? firstCrn, string? secondCrn) => new()
+    {
+        Name = "Seminars",
+        Terms =
+        [
+            new DegreePlanTerm
+            {
+                Season = PlanSeason.Fall,
+                Year = 2026,
+                Courses =
+                [
+                    new DegreePlanCourse(key, title, 4) { SelectedCrn = firstCrn },
+                    new DegreePlanCourse(key, title, 4) { SelectedCrn = secondCrn },
+                ],
+            },
+        ],
+    };
 
     [Fact]
     public void ARowIdSurvivesSubstitutionJson()

@@ -166,9 +166,8 @@ public sealed class DegreePage : UserControl
         _terms.Children.Clear();
         _terms.Children.Add(Chrome.Body($"{_plan.Name} \u00b7 {_plan.CompletedCredits:0.#} completed \u00b7 {_plan.PlannedCredits:0.#} planned"));
         if (_plan.CatalogProgramTitle is not null) _terms.Children.Add(Chrome.Body(_plan.CatalogProgramTitle));
-        var duplicates = DegreePlanAnalysis.DuplicateKeys(_plan);
-        if (duplicates.Count > 0)
-            _terms.Children.Add(Chrome.Body("Listed more than once: " + string.Join(", ", duplicates)));
+        if (DegreePlanAnalysis.RepeatHeader(_plan) is string repeats)
+            _terms.Children.Add(Chrome.Body(repeats));
         if (_plan.Completed.Count > 0)
         {
             var done = new StackPanel { Spacing = 2 };
@@ -349,9 +348,16 @@ public sealed class DegreePage : UserControl
             var title = _session.Index?.Course(key)?.Title ?? "";
             var credits = _session.Index?.Course(key)?.MaxCredits ?? 4;
             var added = false;
+            string? note = null;
             _session.Store.UpdateDegreePlan(_plan.Id, plan =>
-                added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
+            {
+                var destination = plan.Terms.FirstOrDefault(item => item.Id == choice.Term.Id);
+                if (destination is not null)
+                    note = DegreePlanAnalysis.AddRepeatNote(plan, key, destination);
+                added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan);
+            });
             if (!added) _window.SetStatus($"{key} was not added. That semester is not on this plan.");
+            else if (note is not null) _window.SetStatus(note);
             ShowPlan();
         };
         var row = new WrapLayout { Spacing = 8 };

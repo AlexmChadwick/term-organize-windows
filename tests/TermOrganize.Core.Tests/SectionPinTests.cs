@@ -218,7 +218,7 @@ public class SectionPinTests
         Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4), termId, plan));
         Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4), termId, plan));
         Assert.Equal(new HashSet<CourseKey> { Directed }, DegreePlanAnalysis.DuplicateKeys(plan));
-        Assert.Equal(4, DegreeAudit.Run(plan, new ProgramRequirements()).PlannedHours);
+        Assert.Equal(8, DegreeAudit.Run(plan, new ProgramRequirements()).PlannedHours);
 
         plan.Terms[0].Courses.Clear();
         Assert.True(DegreePlanEditing.Add(new DegreePlanCourse(Directed, "Directed Study", 4) { SelectedCrn = "11111" }, termId, plan));
@@ -311,7 +311,8 @@ public class SectionPinTests
             ],
         };
         var collapsed = DegreeAudit.Run(repeated, new ProgramRequirements());
-        Assert.Equal(4, collapsed.PlannedHours);
+        Assert.Equal(8, collapsed.PlannedHours);
+        Assert.Equal(["CS 4990", "CS 4990 (2)"], collapsed.Unused.Select(use => use.Id).OrderBy(id => id, StringComparer.Ordinal));
         Assert.Equal(new HashSet<CourseKey> { Directed }, DegreePlanAnalysis.DuplicateKeys(repeated));
     }
 

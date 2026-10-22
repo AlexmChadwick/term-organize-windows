@@ -121,6 +121,37 @@ public static class DegreePlanAnalysis
     public static int MissingCount(Requisite requisite, IEnumerable<CourseKey> satisfied, CourseEquivalences? equivalences = null) =>
         Count(requisite, (equivalences ?? CourseEquivalences.None).Expanding(satisfied));
 
+    /// <summary>
+    /// <c>1 course appears more than once in this plan. Each copy still counts.</c>
+    /// Null when nothing repeats.
+    /// </summary>
+    public static string? RepeatHeader(DegreePlan plan)
+    {
+        var count = DuplicateKeys(plan).Count;
+        if (count == 0) return null;
+        return count == 1
+            ? "1 course appears more than once in this plan. Each copy still counts."
+            : $"{count} courses appear more than once in this plan. Each copy still counts.";
+    }
+
+    /// <summary>
+    /// A note shown while adding a number the plan already has. Adding still keeps the new row.
+    /// </summary>
+    public static string? AddRepeatNote(DegreePlan plan, CourseKey key, DegreePlanTerm term)
+    {
+        var stored = plan.Terms.FirstOrDefault(item => item.Id == term.Id) ?? term;
+        if (stored.Courses.Any(course => course.Key == key))
+            return $"Already in {stored.Name}. Adding it again keeps both copies.";
+        if (plan.Completed.Any(course => course.Key == key))
+            return "Already in your completed courses. Each copy still counts.";
+        var other = plan.Terms.FirstOrDefault(item => item.Id != stored.Id && item.Courses.Any(course => course.Key == key));
+        return other is null ? null : $"Already planned in {other.Name}. Each copy still counts.";
+    }
+
+    /// <summary><c>CS 4973 appears more than once. Each copy still counts.</c></summary>
+    public static string RepeatMessage(CourseKey key) =>
+        $"{key} appears more than once. Each copy still counts.";
+
     public static HashSet<CourseKey> DuplicateKeys(DegreePlan plan)
     {
         var planned = plan.Terms.SelectMany(term => term.Courses).ToList();
@@ -221,7 +252,7 @@ public static class DegreePlanAnalysis
         return result;
     }
 
-    /// <summary>Same rule as <c>DegreeCourseRepeats</c>: another topic, or another manual CRN, is not a repeat.</summary>
+    /// <summary>Same rule as <c>DegreeCourseRepeats</c>. A warning does not drop the row from the audit.</summary>
     private static bool CountsSeparately(DegreePlanCourse course, DegreePlanCourse other) =>
         DegreeCourseRepeats.CountsSeparately(course, other);
 }

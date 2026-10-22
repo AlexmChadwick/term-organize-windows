@@ -429,14 +429,16 @@ internal sealed class DegreeRequirementsPane : UserControl
         if (targets.Count == 0) return;
         var term = targets[0];
         var added = false;
+        string? note = null;
         _session.Store.UpdateDegreePlan(_plan.Id, plan =>
         {
             var destination = plan.Terms.FirstOrDefault(item => item.Season == term.Season && item.Year == term.Year) ?? term;
+            note = DegreePlanAnalysis.AddRepeatNote(plan, key, destination);
             added = DegreePlanEditing.AddCourse(new DegreePlanCourse(key, title, credits), destination, plan);
         });
-        _window.SetStatus(added
-            ? $"Added {key} to {term.Name}."
-            : $"{key} was not added. That semester is not on this plan.");
+        _window.SetStatus(!added
+            ? $"{key} was not added. That semester is not on this plan."
+            : note ?? $"Added {key} to {term.Name}.");
         PaintAudit();
         _onEdited?.Invoke();
     }

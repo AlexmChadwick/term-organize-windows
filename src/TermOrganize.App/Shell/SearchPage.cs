@@ -13,6 +13,8 @@ public sealed class SearchPage : UserControl
     private readonly TextBox _query = new() { PlaceholderText = "Search courses, professors, or a 5-digit CRN" };
     private readonly CheckBox _open = new() { Content = "Open seats" };
     private readonly CheckBox _honors = new() { Content = "Honors" };
+    private readonly CheckBox _noPrereqs = new() { Content = "No prerequisites" };
+    private readonly CheckBox _noCoreqs = new() { Content = "No corequisites" };
     private readonly Button _subjects = new() { Content = "Subject" };
     private readonly Button _nupath = new() { Content = "NUpath" };
     private readonly Button _level = new() { Content = "Level" };
@@ -32,6 +34,8 @@ public sealed class SearchPage : UserControl
         var filters = new WrapLayout { Spacing = 8 };
         filters.Children.Add(_open);
         filters.Children.Add(_honors);
+        filters.Children.Add(_noPrereqs);
+        filters.Children.Add(_noCoreqs);
         filters.Children.Add(_subjects);
         filters.Children.Add(_nupath);
         filters.Children.Add(_level);
@@ -57,6 +61,10 @@ public sealed class SearchPage : UserControl
         _open.Unchecked += (_, _) => Apply();
         _honors.Checked += (_, _) => Apply();
         _honors.Unchecked += (_, _) => Apply();
+        _noPrereqs.Checked += (_, _) => Apply();
+        _noPrereqs.Unchecked += (_, _) => Apply();
+        _noCoreqs.Checked += (_, _) => Apply();
+        _noCoreqs.Unchecked += (_, _) => Apply();
         _days.SelectionChanged += (_, _) => { if (!_filling) Apply(); };
         _results.RowChosen += tag => { if (tag is CourseKey key) ShowCourse(key); };
         _results.RowOpened += tag => { if (tag is CourseKey key) CourseWindow.Open(_session, key); };
@@ -108,6 +116,8 @@ public sealed class SearchPage : UserControl
     {
         _filters.OpenSeatsOnly = _open.IsChecked == true;
         _filters.HonorsOnly = _honors.IsChecked == true;
+        _filters.NoPrerequisites = _noPrereqs.IsChecked == true;
+        _filters.NoCorequisites = _noCoreqs.IsChecked == true;
         _filters.AllowedDays = (_days.SelectedItem as DayChoice)?.Days;
     }
 
@@ -165,6 +175,8 @@ public sealed class SearchPage : UserControl
         _filters.EndsBefore = null;
         _open.IsChecked = false;
         _honors.IsChecked = false;
+        _noPrereqs.IsChecked = false;
+        _noCoreqs.IsChecked = false;
         BuildMenus(resetDays: true);
         Apply();
     }

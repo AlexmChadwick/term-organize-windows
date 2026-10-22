@@ -63,6 +63,10 @@ public sealed class SearchFilters
     public HashSet<string> ClassTypes { get; set; } = [];
     public bool HonorsOnly { get; set; }
     public bool OpenSeatsOnly { get; set; }
+    /// <summary>Keep courses whose loaded details list no prerequisites. Unknown details are left out.</summary>
+    public bool NoPrerequisites { get; set; }
+    /// <summary>Keep courses whose loaded details list no corequisites. Unknown details are left out.</summary>
+    public bool NoCorequisites { get; set; }
     public InstructionFilter Instruction { get; set; } = InstructionFilter.Any;
     public DaySet? AllowedDays { get; set; }
     public int? StartsAfter { get; set; }
@@ -83,6 +87,8 @@ public sealed class SearchFilters
             if (ClassTypes.Count > 0) n++;
             if (HonorsOnly) n++;
             if (OpenSeatsOnly) n++;
+            if (NoPrerequisites) n++;
+            if (NoCorequisites) n++;
             if (Instruction != InstructionFilter.Any) n++;
             if (AllowedDays is not null) n++;
             if (StartsAfter is not null || EndsBefore is not null) n++;
@@ -108,6 +114,8 @@ public sealed class SearchFilters
         }
         if (MinCredits is double min && course.MaxCredits < min) return false;
         if (MaxCredits is double max && course.MinCredits > max) return false;
+        if (NoPrerequisites && !course.HasNoPrerequisites) return false;
+        if (NoCorequisites && !course.HasNoCorequisites) return false;
         return true;
     }
 

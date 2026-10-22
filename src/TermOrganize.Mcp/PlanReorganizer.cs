@@ -86,7 +86,7 @@ public static class PlanReorganizer
                     if (section is null || section.CourseKey != key)
                         throw new ToolFailure("not_found", $"CRN {pin} is not a section of {key}.");
                 }
-                term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits)
+                term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.StartingCredits)
                 {
                     SelectedCrn = pin,
                 });

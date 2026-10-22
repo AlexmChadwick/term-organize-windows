@@ -17,6 +17,7 @@ public static class SectionJson
         ["instructors"] = InstructorRows(section),
         ["seats_remaining"] = section.SeatsRemaining,
         ["seat_capacity"] = section.SeatCapacity,
+        ["cps_only"] = section.CpsOnly,
     };
 
     public static Dictionary<string, object?> Brief(CourseSection section) => new()
@@ -27,6 +28,7 @@ public static class SectionJson
         ["times"] = Times(section),
         ["location"] = Location(section),
         ["instructors"] = Names(section),
+        ["cps_only"] = section.CpsOnly,
     };
 
     public static Dictionary<string, object?> Picked(CourseSection section) => new()
@@ -36,6 +38,7 @@ public static class SectionJson
         ["number"] = section.Number,
         ["days"] = Days(section),
         ["times"] = Times(section),
+        ["cps_only"] = section.CpsOnly,
     };
 
     private static string Days(CourseSection section) => section.MeetingDays.CompactLabel;

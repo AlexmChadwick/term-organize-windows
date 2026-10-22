@@ -63,7 +63,7 @@ public sealed class PlanService
         return Mutate(planId, expectedRevision, plan => plan.Name = title);
     }
 
-    public Dictionary<string, object?> AddCourse(string planId, string? termLabel, string? subject, string? number, string? crn, int? expectedRevision)
+    public Dictionary<string, object?> AddCourse(string planId, string? termLabel, string? subject, string? number, string? crn, int? expectedRevision, double? credits = null)
     {
         var key = PlanReorganizer.RequireKey(subject, number);
         return Mutate(planId, expectedRevision, plan =>
@@ -72,10 +72,37 @@ public sealed class PlanService
             EnsureKnown(key, term, crn);
             var incoming = DegreeCourseRepeats.CleanCrn(crn);
             var details = _library.FindCourse(key)!;
-            term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits)
+            if (!VariableCredits.TryResolve(details, credits, out var chosen, out var error))
+                throw new ToolFailure("invalid_argument", error ?? "credits is not valid for this course.");
+            term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), chosen)
             {
                 SelectedCrn = incoming,
             });
+        });
+    }
+
+    public Dictionary<string, object?> SetCredits(string planId, string? termLabel, string? subject, string? number, string? crn, double? credits, int? expectedRevision)
+    {
+        var key = PlanReorganizer.RequireKey(subject, number);
+        if (credits is not double requested)
+            throw new ToolFailure("invalid_argument", "credits is required.");
+        return Mutate(planId, expectedRevision, plan =>
+        {
+            var term = RequireTerm(plan, termLabel);
+            var matches = term.Courses.Where(item => item.Key == key).ToList();
+            if (matches.Count == 0)
+                throw new ToolFailure("not_found", $"{key} is not in {term.Name}.");
+            var wanted = DegreeCourseRepeats.CleanCrn(crn);
+            if (matches.Count > 1 && wanted is null)
+                throw new ToolFailure("invalid_argument", $"{key} is in {term.Name} more than once. Pass crn to name the row.");
+            var target = wanted is null
+                ? matches[0]
+                : matches.FirstOrDefault(item => string.Equals(DegreeCourseRepeats.CleanCrn(item.SelectedCrn), wanted, StringComparison.Ordinal))
+                    ?? throw new ToolFailure("not_found", $"CRN {wanted} is not a chosen section of {key} in {term.Name}.");
+            var details = _library.FindCourse(key) ?? throw new ToolFailure("not_found", $"Unknown course {key}.");
+            if (!VariableCredits.TrySet(details, requested, out var chosen, out var error))
+                throw new ToolFailure("invalid_argument", error ?? "credits is not valid for this course.");
+            target.Credits = chosen;
         });
     }
 
@@ -410,6 +437,9 @@ public sealed class PlanService
             ["number"] = course.Key?.Number ?? "",
             ["title"] = TextFormat.Sanitize(course.Title),
             ["credits"] = course.Credits,
+            ["credit_low"] = course.Key is CourseKey lowKey ? index?.Course(lowKey)?.MinCredits : null,
+            ["credit_high"] = course.Key is CourseKey highKey && index?.Course(highKey) is { IsVariableCredit: true } variable ? variable.MaxCredits : null,
+            ["cps_only"] = course.Key is CourseKey flagKey && index is not null ? CpsNotes.Flag(index.Sections(flagKey)) : null,
         };
         if (string.IsNullOrWhiteSpace(course.SelectedCrn)) return body;
         body["crn"] = course.SelectedCrn;

@@ -47,15 +47,16 @@ public sealed class PlanWriteTools
         _plans.Rename(plan_id ?? "", name, ToolErrors.RequireRevision(expected_revision));
 
     [McpServerTool(Name = "add_course", ReadOnly = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Adds a bundled course to a term. An unknown course or CRN is rejected. The same course may be added again. validation.duplicates names a repeat that is not its own topic. Each copy still counts.")]
+    [Description("Adds a bundled course to a term. An unknown course or CRN is rejected. The same course may be added again. validation.duplicates names a repeat that is not its own topic. Each copy still counts. Optional credits sets a variable-credit row; omitted uses the catalog default.")]
     public Dictionary<string, object?> add_course(
         [Description("Plan UUID.")] string? plan_id = null,
         [Description("Term string, such as 202710 or Fall 2026.")] string? term = null,
         [Description("Subject code.")] string? subject = null,
         [Description("Course number.")] string? number = null,
         [Description("Integer revision from the last read.")] JsonElement? expected_revision = null,
-        [Description("Optional section CRN.")] string? crn = null) =>
-        _plans.AddCourse(plan_id ?? "", term, subject, number, crn, ToolErrors.RequireRevision(expected_revision));
+        [Description("Optional section CRN.")] string? crn = null,
+        [Description("Optional chosen credits for a variable-credit course.")] double? credits = null) =>
+        _plans.AddCourse(plan_id ?? "", term, subject, number, crn, ToolErrors.RequireRevision(expected_revision), credits);
 
     [McpServerTool(Name = "remove_course", ReadOnly = false, Destructive = true, OpenWorld = false, UseStructuredContent = true)]
     [Description("Removes a course from one term of a saved plan.")]
@@ -88,6 +89,18 @@ public sealed class PlanWriteTools
         [Description("Section CRN.")] string? crn = null,
         [Description("Integer revision from the last read.")] JsonElement? expected_revision = null) =>
         _plans.SetSection(plan_id ?? "", term, subject, number, crn, ToolErrors.RequireRevision(expected_revision));
+
+    [McpServerTool(Name = "set_credits", ReadOnly = false, OpenWorld = false, UseStructuredContent = true)]
+    [Description("Sets the chosen credits on one variable-credit row. A fixed-credit course is rejected. Pass crn when the term lists the course more than once.")]
+    public Dictionary<string, object?> set_credits(
+        [Description("Plan UUID.")] string? plan_id = null,
+        [Description("Term string, such as 202710 or Fall 2026.")] string? term = null,
+        [Description("Subject code.")] string? subject = null,
+        [Description("Course number.")] string? number = null,
+        [Description("Integer revision from the last read.")] JsonElement? expected_revision = null,
+        [Description("Section CRN, required when more than one row matches.")] string? crn = null,
+        [Description("Whole number of credits inside the course range.")] double? credits = null) =>
+        _plans.SetCredits(plan_id ?? "", term, subject, number, crn, credits, ToolErrors.RequireRevision(expected_revision));
 
     [McpServerTool(Name = "apply_reorganize", ReadOnly = false, Destructive = true, OpenWorld = false, UseStructuredContent = true)]
     [Description("Runs reorganize_plan on a saved plan and writes the result. Returns the moves.")]

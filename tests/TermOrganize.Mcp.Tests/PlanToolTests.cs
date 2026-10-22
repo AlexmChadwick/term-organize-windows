@@ -290,9 +290,70 @@ public sealed class PlanToolTests : IDisposable
         Assert.Contains("\"version\":99", File.ReadAllText(_path));
     }
 
+    [Fact]
+    public void SetCreditsKeepsEachRowAndRejectsAFixedOrOutOfRangeValue()
+    {
+        var spring = SharedCatalog.Library.ByCode["202730"];
+        var variable = spring.Courses.First(course => course.IsVariableCredit && spring.Sections(course.Key).Count > 0);
+        var fixedCourse = spring.Courses.First(course => !course.IsVariableCredit && course.MinCredits > 0 && course.Key != variable.Key);
+        var section = spring.Sections(variable.Key)[0];
+        var created = _write.create_plan("Credits", ["Spring 2027"]);
+        var id = (string)created["id"]!;
+        var revision = (int)created["revision"]!;
+
+        var added = _write.add_course(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision));
+        revision = (int)added["revision"]!;
+        var first = Courses(added).Single();
+        Assert.Equal(variable.StartingCredits, Convert.ToDouble(first["credits"]));
+        Assert.Equal(variable.MinCredits, Convert.ToDouble(first["credit_low"]));
+        Assert.Equal(variable.MaxCredits, Convert.ToDouble(first["credit_high"]));
+        Assert.True(first.ContainsKey("cps_only"));
+
+        var range = Assert.Throws<ToolFailure>(() => _write.set_credits(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision), credits: variable.MaxCredits + 1));
+        Assert.Equal("invalid_argument", range.Code);
+        var fraction = Assert.Throws<ToolFailure>(() => _write.set_credits(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision), credits: variable.MinCredits + 0.5));
+        Assert.Equal("invalid_argument", fraction.Code);
+
+        var lowChoice = variable.MinCredits > 0 ? variable.MinCredits : variable.StartingCredits;
+        var highChoice = variable.MaxCredits > lowChoice ? variable.MaxCredits : lowChoice;
+        var lowered = _write.set_credits(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision), credits: highChoice);
+        revision = (int)lowered["revision"]!;
+        Assert.Equal(highChoice, Convert.ToDouble(Courses(lowered).Single()["credits"]));
+
+        var second = _write.add_course(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision), section.Crn, lowChoice);
+        revision = (int)second["revision"]!;
+        var ambiguous = Assert.Throws<ToolFailure>(() => _write.set_credits(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision), credits: lowChoice));
+        Assert.Equal("invalid_argument", ambiguous.Code);
+        Assert.Contains("crn", ambiguous.Message, StringComparison.OrdinalIgnoreCase);
+
+        var named = _write.set_credits(id, "Spring 2027", variable.Subject, variable.Number, Rev(revision), section.Crn, lowChoice);
+        var rows = Courses(named);
+        Assert.Equal(2, rows.Count);
+        Assert.Contains(rows, row => (string?)row.GetValueOrDefault("crn") == section.Crn && Convert.ToDouble(row["credits"]) == lowChoice);
+        Assert.Contains(rows, row => !row.ContainsKey("crn") && Convert.ToDouble(row["credits"]) == highChoice);
+
+        var stored = new UserDataStore(_path);
+        var link = stored.Plans.Single(item => item.TermCode == "202730");
+        Assert.Equal(2, link.Courses.Count);
+        Assert.Contains(link.Courses, row => row.Credits == highChoice);
+        Assert.Contains(link.Courses, row => row.PinnedCrn == section.Crn && row.Credits == lowChoice);
+
+        var addedFixed = _write.add_course(id, "Spring 2027", fixedCourse.Subject, fixedCourse.Number, Rev((int)named["revision"]!));
+        var fixedSet = Assert.Throws<ToolFailure>(() => _write.set_credits(id, "Spring 2027", fixedCourse.Subject, fixedCourse.Number, Rev((int)addedFixed["revision"]!), credits: fixedCourse.MinCredits));
+        Assert.Equal("invalid_argument", fixedSet.Code);
+        var wrongFixed = Assert.Throws<ToolFailure>(() => _write.add_course(id, "Spring 2027", fixedCourse.Subject, fixedCourse.Number, Rev((int)addedFixed["revision"]!), credits: fixedCourse.MinCredits + 1));
+        Assert.Equal("invalid_argument", wrongFixed.Code);
+    }
+
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
     private static JsonElement Rev(int revision) => JsonSerializer.SerializeToElement(revision);
+
+    private static List<Dictionary<string, object?>> Courses(Dictionary<string, object?> plan)
+    {
+        var terms = (List<Dictionary<string, object?>>)plan["terms"]!;
+        return terms.SelectMany(term => (List<Dictionary<string, object?>>)term["courses"]!).ToList();
+    }
 
     private static List<Dictionary<string, object?>> Duplicates(Dictionary<string, object?> plan)
     {

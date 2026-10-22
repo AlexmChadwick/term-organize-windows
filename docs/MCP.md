@@ -136,7 +136,9 @@ No arguments.
 
 ### search_courses
 
-`term` (code or label such as `Fall 2026`), optional `query`, `subject`, `number`, `attribute`, `no_prerequisites`, `no_corequisites`, `limit` (default 25, max 100).
+`term` (code or label such as `Fall 2026`), optional `query`, `subject`, `number`, `attribute`, `no_prerequisites`, `no_corequisites`, `limit` (default 25, max 100), `level` (`all`, `undergrad`, or `grad`).
+
+`level` combines with the other filters. Undergrad is a course number below 5000. Grad is 5000 and up. Omitted or `all` leaves every number in the results. Any other value is `invalid_argument`.
 
 `no_prerequisites` and `no_corequisites` are booleans. When true, a course is kept only when its details were loaded and that requisite was omitted. Omitted on a loaded course means none. Null before the details load means unknown, and those courses are left out. A placement test still counts as a prerequisite.
 
@@ -144,13 +146,13 @@ No arguments.
 {
   "term": "202730",
   "courses": [
-    { "subject": "CS", "number": "3000", "title": "Algorithms", "credits": 4, "attributes": ["NCFQ"] }
+    { "subject": "CS", "number": "3000", "title": "Algorithms", "credits": 4, "credit_low": 4, "credit_high": null, "cps_only": null, "attributes": ["NCFQ"] }
   ],
   "truncated": false
 }
 ```
 
-`credits` is a number when min and max match, otherwise a string such as `1 to 4`.
+`credits` is a number when min and max match, otherwise a string such as `1 to 8`. `credit_low` and `credit_high` are the range. `credit_high` is null when the course is fixed. `cps_only` is true when every known section is CPS-only, false when every section is known and one is not, and null when restrictions have not been loaded.
 
 ### get_course
 
@@ -164,6 +166,9 @@ No arguments.
   "title": "Algorithms",
   "description": "",
   "credits": 4,
+  "credit_low": 4,
+  "credit_high": null,
+  "cps_only": null,
   "attributes": [],
   "sections": [
     {
@@ -174,7 +179,8 @@ No arguments.
       "location": "SN 108",
       "instructors": [{ "name": "Ada Lovelace", "email": "lovelace@northeastern.edu" }],
       "seats_remaining": 3,
-      "seat_capacity": 40
+      "seat_capacity": 40,
+      "cps_only": null
     }
   ]
 }
@@ -276,9 +282,11 @@ A course moves only into a term the plan already has. The target term's bundled 
 
 ### add_course
 
-`plan_id`, `term`, `subject`, `number`, optional `crn`, `expected_revision`.
+`plan_id`, `term`, `subject`, `number`, optional `crn`, `expected_revision`, optional `credits`.
 
-The course must exist in a bundled catalog. A CRN must be a section of that course in that term. The same subject and number may be added again, including without a CRN and including the same CRN. When the copies are not separate topics, `validation.duplicates` names the course and says each copy still counts. Different CRNs are not a warning, and a title containing "topic" is not a warning when neither row has a CRN. Each course object includes `id`, the row a substitution names. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`. The linked schedule keeps one row per degree-plan row. Every credited copy counts in the audit.
+The course must exist in a bundled catalog. A CRN must be a section of that course in that term. The same subject and number may be added again, including without a CRN and including the same CRN. When the copies are not separate topics, `validation.duplicates` names the course and says each copy still counts. Different CRNs are not a warning, and a title containing "topic" is not a warning when neither row has a CRN. Each course object includes `id`, the row a substitution names, plus `credits` (the chosen value), `credit_low`, `credit_high` (null when the course is fixed), and `cps_only`. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`. The linked schedule keeps one row per degree-plan row. Every credited copy counts in the audit.
+
+Omitted `credits` uses Banner's default when that default sits inside the range, otherwise the low end. A variable course rejects a value that is not a whole number inside the range. A fixed course rejects a value other than its own credit count. Each copy keeps its own chosen value.
 
 ### remove_course
 
@@ -289,6 +297,12 @@ The course must exist in a bundled catalog. A CRN must be a section of that cour
 `plan_id`, `subject`, `number`, `from_term`, `to_term`, `expected_revision`.
 
 A chosen CRN stays on the course. `move_course` does not clear it when the destination catalog uses a different section. Two listings may land in one term. When the copies are not separate topics, `validation.duplicates` names the course and says each copy still counts. `move_course` moves the first row of that subject and number.
+
+### set_credits
+
+`plan_id`, `term`, `subject`, `number`, `credits`, `expected_revision`, optional `crn`.
+
+Sets the chosen credits on one row. Hours totals use that value. When the term lists the course more than once, `crn` names the row and is required. A missing course is `not_found`. A fixed-credit course, or a value outside the range, is `invalid_argument`. The linked schedule row keeps the same value. Rows are not merged.
 
 ### set_section
 

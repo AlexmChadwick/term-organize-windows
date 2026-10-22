@@ -58,6 +58,24 @@ public sealed class CatalogToolTests
         Assert.DoesNotContain(blockedCoreq, row => (string)row["number"]! == withCoreq.Number);
     }
 
+    [Fact]
+    public void SearchLevelSplitsAt5000()
+    {
+        var spring = Library.ByCode["202730"];
+        var under = spring.Courses.First(course => course.Key.NumericValue is > 0 and < 5000);
+        var grad = spring.Courses.First(course => course.Key.NumericValue >= 5000);
+        var underRows = Rows(_tools.search_courses("202730", subject: under.Subject, number: under.Number, level: "undergrad"));
+        Assert.Contains(underRows, row => (string)row["subject"]! == under.Subject && (string)row["number"]! == under.Number);
+        var hidden = Rows(_tools.search_courses("202730", subject: grad.Subject, number: grad.Number, level: "undergrad"));
+        Assert.DoesNotContain(hidden, row => (string)row["subject"]! == grad.Subject && (string)row["number"]! == grad.Number);
+        var gradRows = Rows(_tools.search_courses("202730", subject: grad.Subject, number: grad.Number, level: "grad", no_prerequisites: grad.HasNoPrerequisites));
+        Assert.Contains(gradRows, row => (string)row["number"]! == grad.Number);
+        Assert.True(gradRows[0].ContainsKey("credit_low"));
+        Assert.True(gradRows[0].ContainsKey("cps_only"));
+        var bad = Assert.Throws<ToolFailure>(() => _tools.search_courses("202730", level: "freshman"));
+        Assert.Equal("invalid_argument", bad.Code);
+    }
+
     static List<Dictionary<string, object?>> Rows(Dictionary<string, object?> result) =>
         (List<Dictionary<string, object?>>)result["courses"]!;
 

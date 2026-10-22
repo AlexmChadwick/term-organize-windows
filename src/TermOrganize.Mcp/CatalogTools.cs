@@ -43,7 +43,8 @@ public sealed class CatalogTools
         [Description("Optional attribute code or NUpath short name.")] string? attribute = null,
         [Description("When true, only courses whose loaded details list no prerequisites. Courses whose prerequisites were not loaded are left out.")] bool? no_prerequisites = null,
         [Description("When true, only courses whose loaded details list no corequisites. Courses whose corequisites were not loaded are left out.")] bool? no_corequisites = null,
-        [Description("Maximum courses to return. Defaults to 25.")] int? limit = null)
+        [Description("Maximum courses to return. Defaults to 25.")] int? limit = null,
+        [Description("all, undergrad, or grad. Undergrad is a course number below 5000. Grad is 5000 and up. Combines with the other filters.")] string? level = null)
     {
         var index = RequireIndex(term);
         var cap = limit is null ? 25 : Math.Clamp(limit.Value, 1, 100);
@@ -51,6 +52,7 @@ public sealed class CatalogTools
         {
             NoPrerequisites = no_prerequisites == true,
             NoCorequisites = no_corequisites == true,
+            Division = ParseLevel(level),
         };
         if (!string.IsNullOrWhiteSpace(subject))
             filters.Subjects.Add(subject.Trim().ToUpperInvariant());
@@ -75,7 +77,7 @@ public sealed class CatalogTools
         return new Dictionary<string, object?>
         {
             ["term"] = index.Term.Code,
-            ["courses"] = list.Take(cap).Select(CourseRow).ToList(),
+            ["courses"] = list.Take(cap).Select(course => CourseRow(course, index)).ToList(),
             ["truncated"] = list.Count > cap,
         };
     }
@@ -98,6 +100,9 @@ public sealed class CatalogTools
             ["title"] = TextFormat.Sanitize(course.Title),
             ["description"] = TextFormat.Sanitize(course.Description),
             ["credits"] = Credits(course),
+            ["credit_low"] = course.MinCredits,
+            ["credit_high"] = course.IsVariableCredit ? course.MaxCredits : null,
+            ["cps_only"] = CpsNotes.Flag(index.Sections(key)),
             ["attributes"] = course.Attributes,
             ["sections"] = index.Sections(key).Select(SectionJson.Full).ToList(),
         };
@@ -166,7 +171,8 @@ public sealed class CatalogTools
                 throw new ToolFailure("not_found", $"CRN {pin} is not a section of {key} in {index.Term.Code}.");
             prior.Add(pin);
             var details = index.Course(key)!;
-            inputs.Add(new ScheduleCourseInput(key, true, sections, minCredits: details.MinCredits, maxCredits: details.MaxCredits)
+            var exact = VariableCredits.Exact(details, null);
+            inputs.Add(new ScheduleCourseInput(key, true, sections, minCredits: exact ?? details.MinCredits, maxCredits: exact ?? details.MaxCredits)
             {
                 PinnedCrn = pin,
             });
@@ -227,12 +233,26 @@ public sealed class CatalogTools
         return NUPathInfo.FromShort(text);
     }
 
-    private static Dictionary<string, object?> CourseRow(Course course) => new()
+    private static CourseDivision ParseLevel(string? level)
+    {
+        if (string.IsNullOrWhiteSpace(level) || level.Equals("all", StringComparison.OrdinalIgnoreCase))
+            return CourseDivision.All;
+        if (level.Equals("undergrad", StringComparison.OrdinalIgnoreCase))
+            return CourseDivision.Undergrad;
+        if (level.Equals("grad", StringComparison.OrdinalIgnoreCase))
+            return CourseDivision.Grad;
+        throw new ToolFailure("invalid_argument", "level must be all, undergrad, or grad.");
+    }
+
+    private static Dictionary<string, object?> CourseRow(Course course, CatalogIndex index) => new()
     {
         ["subject"] = course.Subject,
         ["number"] = course.Number,
         ["title"] = TextFormat.Sanitize(course.Title),
         ["credits"] = Credits(course),
+        ["credit_low"] = course.MinCredits,
+        ["credit_high"] = course.IsVariableCredit ? course.MaxCredits : null,
+        ["cps_only"] = CpsNotes.Flag(index.Sections(course.Key)),
         ["attributes"] = course.Attributes,
     };
 

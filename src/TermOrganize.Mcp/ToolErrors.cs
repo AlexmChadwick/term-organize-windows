@@ -29,6 +29,7 @@ public static class ToolErrors
         "remove_course",
         "move_course",
         "set_section",
+        "set_credits",
         "apply_reorganize",
         "delete_plan",
     };

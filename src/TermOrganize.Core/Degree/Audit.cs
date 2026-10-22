@@ -35,6 +35,13 @@ public sealed partial class DegreeAudit
         public bool BySubstitution { get; set; }
         public CourseKey? Satisfies { get; set; }
         public int Instance { get; set; }
+        /// <summary>The degree-plan row this entry came from. A substitution names this id, not only the course number.</summary>
+        public Guid RowId { get; set; }
+        /// <summary>
+        /// False for an extra row of the same course that does not count on its own.
+        /// The row stays on the plan and can still be named by a substitution.
+        /// </summary>
+        public bool CountsTowardHours { get; set; } = true;
 
         /// <summary>Manual section, when the plan named one. Distinct CRNs are separate audit entries.</summary>
         public string? SelectedCrn { get; set; }
@@ -54,6 +61,8 @@ public sealed partial class DegreeAudit
             BySubstitution = BySubstitution,
             Satisfies = Satisfies,
             Instance = Instance,
+            RowId = RowId,
+            CountsTowardHours = CountsTowardHours,
             SelectedCrn = SelectedCrn,
         };
     }

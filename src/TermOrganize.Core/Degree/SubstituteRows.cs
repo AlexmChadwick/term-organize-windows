@@ -24,9 +24,19 @@ public static class DegreeSubstituteRows
     }
 
     /// <summary>The substitution that counts a course toward the requirement.</summary>
-    public static RequirementSubstitution? Substitution(CourseKey key, DegreeAudit.RuleResult result) =>
-        result.Substitutions.FirstOrDefault(item =>
+    public static RequirementSubstitution? Substitution(CourseKey key, DegreeAudit.RuleResult result, Guid? rowId = null)
+    {
+        if (rowId is Guid id)
+        {
+            var named = result.Substitutions.FirstOrDefault(item =>
+                item.Change is SubstitutionChange.CountCourseChange count && count.RowId == id);
+            if (named is not null) return named;
+            return result.Substitutions.FirstOrDefault(item =>
+                item.Change is SubstitutionChange.CountCourseChange count && count.Course == key && count.RowId is null);
+        }
+        return result.Substitutions.FirstOrDefault(item =>
             item.Change is SubstitutionChange.CountCourseChange count && count.Course == key);
+    }
 
     /// <summary>
     /// The requirement under the name that reads on its own

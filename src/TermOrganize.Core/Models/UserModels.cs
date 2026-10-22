@@ -65,6 +65,8 @@ public sealed class PlanCourse
     /// so generation can keep the row locked instead of offering every other section.
     /// </summary>
     public string? PinnedCrn { get; set; }
+    /// <summary>The degree-plan row this schedule row was copied from, when sync created it.</summary>
+    public Guid? DegreeRowId { get; set; }
     [JsonIgnore] public CourseKey Id => Key;
 }
 
@@ -367,7 +369,7 @@ public sealed class RequirementReplacement
 [JsonConverter(typeof(SubstitutionChangeConverter))]
 public abstract class SubstitutionChange : IEquatable<SubstitutionChange>
 {
-    public static SubstitutionChange CountCourse(CourseKey key) => new CountCourseChange(key);
+    public static SubstitutionChange CountCourse(CourseKey key, Guid? rowId = null) => new CountCourseChange(key, rowId);
     public static SubstitutionChange Replace(RequirementReplacement replacement) => new ReplaceChange(replacement);
     public static SubstitutionChange Waive { get; } = new WaiveChange();
 
@@ -378,9 +380,15 @@ public abstract class SubstitutionChange : IEquatable<SubstitutionChange>
     public sealed class CountCourseChange : SubstitutionChange
     {
         public CourseKey Course { get; }
-        public CountCourseChange(CourseKey course) => Course = course;
-        public override bool Equals(SubstitutionChange? other) => other is CountCourseChange c && c.Course == Course;
-        public override int GetHashCode() => HashCode.Combine(1, Course);
+        /// <summary>The degree-plan row this substitution counts. Null on substitutions saved before rows were named.</summary>
+        public Guid? RowId { get; }
+        public CountCourseChange(CourseKey course, Guid? rowId = null)
+        {
+            Course = course;
+            RowId = rowId;
+        }
+        public override bool Equals(SubstitutionChange? other) => other is CountCourseChange c && c.Course == Course && c.RowId == RowId;
+        public override int GetHashCode() => HashCode.Combine(1, Course, RowId);
     }
 
     public sealed class ReplaceChange : SubstitutionChange
@@ -468,8 +476,14 @@ public sealed class SubstitutionChangeConverter : JsonConverter<SubstitutionChan
         if (root.TryGetProperty("waive", out _)) return SubstitutionChange.Waive;
         if (root.TryGetProperty("countCourse", out var course))
         {
+            Guid? row = null;
+            if (course.ValueKind == JsonValueKind.Object
+                && course.TryGetProperty("row", out var rowElement)
+                && rowElement.ValueKind == JsonValueKind.String
+                && Guid.TryParse(rowElement.GetString(), out var parsed))
+                row = parsed;
             var key = Unwrap(course, options);
-            return SubstitutionChange.CountCourse(key);
+            return SubstitutionChange.CountCourse(key, row);
         }
         if (root.TryGetProperty("replace", out var replace))
         {
@@ -496,6 +510,7 @@ public sealed class SubstitutionChangeConverter : JsonConverter<SubstitutionChan
                 writer.WriteStartObject();
                 writer.WritePropertyName("_0");
                 JsonSerializer.Serialize(writer, course.Course, options);
+                if (course.RowId is Guid row) writer.WriteString("row", row.ToString("D"));
                 writer.WriteEndObject();
                 break;
             case SubstitutionChange.ReplaceChange replace:

@@ -285,7 +285,10 @@ public sealed class DegreePage : UserControl
             };
         }
         var line = course.Key?.ToString() ?? course.Label;
-        row.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
+        var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+        row.Children.Add(Chrome.Body(pin is null
+            ? $"{line}  {course.Title}  ({course.Credits:0.#})"
+            : $"{line}  {course.Title}  ({course.Credits:0.#})  CRN {pin}"));
         var buttons = new WrapLayout { Spacing = 8 };
         var id = course.Id;
         if (!completed)
@@ -441,13 +444,8 @@ public sealed class DegreePage : UserControl
         }
         var schedule = _session.Store.PrimaryPlan(_session.Term.Code) ?? _session.Store.CreatePlan(_plan.Name, _session.Term.Code);
         var added = 0;
-        foreach (var course in match.Courses)
-        {
-            if (course.Key is not CourseKey key) continue;
-            if (_session.Store.AddCourse(key, schedule.Id)) added++;
-        }
         var pins = 0;
-        _session.Store.UpdatePlan(schedule.Id, plan => pins = DegreePlanSchedule.CopyPins(plan, match.Courses));
+        _session.Store.UpdatePlan(schedule.Id, plan => (added, pins) = DegreePlanSchedule.SyncRows(plan, match.Courses));
         _window.SetStatus(added == 0 && pins == 0
             ? "Those courses are already on the schedule."
             : pins > 0 && added == 0

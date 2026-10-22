@@ -15,8 +15,14 @@ public static class ScheduleCourseInputs
     {
         var result = new List<ScheduleCourseInput>();
         var onlyCourse = plan.Courses.Count == 1 ? plan.Courses[0] : null;
+        var copies = plan.Courses.GroupBy(item => item.Key).ToDictionary(group => group.Key, group => group.Count());
         foreach (var planCourse in plan.Courses)
         {
+            if (copies[planCourse.Key] > 1)
+            {
+                result.Add(OneRow(planCourse, index));
+                continue;
+            }
             var course = index.Course(planCourse.Key);
             var sections = index.Sections(planCourse.Key);
             var resolved = new List<string>();
@@ -70,6 +76,20 @@ public static class ScheduleCourseInputs
             result.Add(Input(key, true, usable, [], listed, pin));
         }
         return result;
+    }
+
+    /// <summary>One slot for one repeated row. Its pin is not shared with the other rows of that course.</summary>
+    private static ScheduleCourseInput OneRow(PlanCourse planCourse, CatalogIndex index)
+    {
+        var course = index.Course(planCourse.Key);
+        var sections = index.Sections(planCourse.Key);
+        var pin = DegreeCourseRepeats.CleanCrn(planCourse.PinnedCrn);
+        if (pin is null)
+            return Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null);
+        var usable = sections.Where(section => string.Equals(section.Crn, pin, StringComparison.Ordinal)).ToList();
+        return usable.Count == 0
+            ? Locked(planCourse, course, pin)
+            : Input(planCourse.Key, planCourse.IsRequired, usable, planCourse.ExcludedCRNs, course, pin);
     }
 
     private static ScheduleCourseInput Locked(PlanCourse planCourse, Course? course, string pin) =>

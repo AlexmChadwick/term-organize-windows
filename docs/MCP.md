@@ -255,7 +255,13 @@ A course moves only into a term the plan already has. The target term's bundled 
   "validation": {
     "clashes": [ { "first": "10001", "second": "10002", "reason": "overlap" } ],
     "not_offered": [ { "subject": "CS", "number": "3000", "term": "Fall 2026" } ],
-    "duplicates": ["CS 4990"]
+    "duplicates": [
+      {
+        "subject": "CS",
+        "number": "4990",
+        "message": "CS 4990 appears more than once. Each copy still counts."
+      }
+    ]
   }
 }
 ```
@@ -272,7 +278,7 @@ A course moves only into a term the plan already has. The target term's bundled 
 
 `plan_id`, `term`, `subject`, `number`, optional `crn`, `expected_revision`.
 
-The course must exist in a bundled catalog. A CRN must be a section of that course in that term. The same subject and number may be added again, including without a CRN and including the same CRN. `get_plan` lists that course under `validation.duplicates` when the rows do not count separately. Each course object includes `id`, the row a substitution names. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`. The linked schedule keeps one row per degree-plan row.
+The course must exist in a bundled catalog. A CRN must be a section of that course in that term. The same subject and number may be added again, including without a CRN and including the same CRN. When the copies are not separate topics, `validation.duplicates` names the course and says each copy still counts. Different CRNs are not a warning, and a title containing "topic" is not a warning when neither row has a CRN. Each course object includes `id`, the row a substitution names. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`. The linked schedule keeps one row per degree-plan row. Every credited copy counts in the audit.
 
 ### remove_course
 
@@ -282,7 +288,7 @@ The course must exist in a bundled catalog. A CRN must be a section of that cour
 
 `plan_id`, `subject`, `number`, `from_term`, `to_term`, `expected_revision`.
 
-A chosen CRN stays on the course. `move_course` does not clear it when the destination catalog uses a different section. Two listings may land in one term. When they do not count separately, `validation.duplicates` names the course. `move_course` moves the first row of that subject and number.
+A chosen CRN stays on the course. `move_course` does not clear it when the destination catalog uses a different section. Two listings may land in one term. When the copies are not separate topics, `validation.duplicates` names the course and says each copy still counts. `move_course` moves the first row of that subject and number.
 
 ### set_section
 

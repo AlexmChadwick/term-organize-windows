@@ -47,7 +47,7 @@ public sealed class PlanWriteTools
         _plans.Rename(plan_id ?? "", name, ToolErrors.RequireRevision(expected_revision));
 
     [McpServerTool(Name = "add_course", ReadOnly = false, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Adds a bundled course to a term. An unknown course or CRN is rejected. The same course may be added again; validation.duplicates warns when the rows do not count separately.")]
+    [Description("Adds a bundled course to a term. An unknown course or CRN is rejected. The same course may be added again. validation.duplicates names a repeat that is not its own topic. Each copy still counts.")]
     public Dictionary<string, object?> add_course(
         [Description("Plan UUID.")] string? plan_id = null,
         [Description("Term string, such as 202710 or Fall 2026.")] string? term = null,

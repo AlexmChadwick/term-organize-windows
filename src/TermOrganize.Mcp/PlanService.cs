@@ -458,7 +458,15 @@ public sealed class PlanService
         {
             ["clashes"] = clashes,
             ["not_offered"] = missing,
-            ["duplicates"] = DegreePlanAnalysis.DuplicateKeys(plan).Select(key => key.ToString()).OrderBy(key => key, StringComparer.Ordinal).ToList(),
+            ["duplicates"] = DegreePlanAnalysis.DuplicateKeys(plan)
+                .OrderBy(key => key.ToString(), StringComparer.Ordinal)
+                .Select(key => new Dictionary<string, object?>
+                {
+                    ["subject"] = key.Subject,
+                    ["number"] = key.Number,
+                    ["message"] = DegreePlanAnalysis.RepeatMessage(key),
+                })
+                .ToList(),
         };
     }
 

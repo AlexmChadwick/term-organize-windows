@@ -154,13 +154,13 @@ public sealed class PlanToolTests : IDisposable
         var created = _write.create_plan("Topics", ["Fall 2026"]);
         var id = (string)created["id"]!;
         var revision = (int)created["revision"]!;
-        var key = course.Key.ToString();
+        var message = $"{course.Key} appears more than once. Each copy still counts.";
 
         var first = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn);
         revision = (int)first["revision"]!;
         var second = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[1].Crn);
         revision = (int)second["revision"]!;
-        Assert.DoesNotContain(key, Duplicates(second));
+        Assert.DoesNotContain(Duplicates(second), item => (string?)item["message"] == message);
 
         var unchanged = _write.set_section(id, "Fall 2026", course.Subject, course.Number, sections[0].Crn, Rev(revision));
         Assert.Equal(revision, (int)unchanged["revision"]!);
@@ -171,9 +171,9 @@ public sealed class PlanToolTests : IDisposable
 
         var same = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn);
         revision = (int)same["revision"]!;
-        Assert.Contains(key, Duplicates(same));
+        Assert.Contains(Duplicates(same), item => (string?)item["subject"] == course.Subject && (string?)item["number"] == course.Number && (string?)item["message"] == message);
         var open = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision));
-        Assert.Contains(key, Duplicates(open));
+        Assert.Contains(Duplicates(open), item => (string?)item["message"] == message);
 
         var loaded = new UserDataStore(_path).DegreePlan(Guid.Parse(id))!;
         var pins = loaded.Terms.Single().Courses.Select(item => item.SelectedCrn).ToList();
@@ -294,9 +294,9 @@ public sealed class PlanToolTests : IDisposable
 
     private static JsonElement Rev(int revision) => JsonSerializer.SerializeToElement(revision);
 
-    private static List<string> Duplicates(Dictionary<string, object?> plan)
+    private static List<Dictionary<string, object?>> Duplicates(Dictionary<string, object?> plan)
     {
         var validation = (Dictionary<string, object?>)plan["validation"]!;
-        return (List<string>)validation["duplicates"]!;
+        return (List<Dictionary<string, object?>>)validation["duplicates"]!;
     }
 }

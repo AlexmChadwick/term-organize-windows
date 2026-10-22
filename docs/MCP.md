@@ -254,7 +254,8 @@ A course moves only into a term the plan already has. The target term's bundled 
 {
   "validation": {
     "clashes": [ { "first": "10001", "second": "10002", "reason": "overlap" } ],
-    "not_offered": [ { "subject": "CS", "number": "3000", "term": "Fall 2026" } ]
+    "not_offered": [ { "subject": "CS", "number": "3000", "term": "Fall 2026" } ],
+    "duplicates": ["CS 4990"]
   }
 }
 ```
@@ -271,7 +272,7 @@ A course moves only into a term the plan already has. The target term's bundled 
 
 `plan_id`, `term`, `subject`, `number`, optional `crn`, `expected_revision`.
 
-The course must exist in a bundled catalog. A CRN must be a section of that course in that term. A second listing of the same subject and number is accepted only when every listing, including the new one, has a manually selected CRN and the CRNs differ. Without those CRNs the course is rejected; use `move_course`. The same CRN twice is rejected. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`.
+The course must exist in a bundled catalog. A CRN must be a section of that course in that term. The same subject and number may be added again, including without a CRN and including the same CRN. `get_plan` lists that course under `validation.duplicates` when the rows do not count separately. Each course object includes `id`, the row a substitution names. A known course may be placed in a term that does not offer it. `get_plan` then reports `not_offered`. The linked schedule keeps one row per degree-plan row.
 
 ### remove_course
 
@@ -281,7 +282,7 @@ The course must exist in a bundled catalog. A CRN must be a section of that cour
 
 `plan_id`, `subject`, `number`, `from_term`, `to_term`, `expected_revision`.
 
-A chosen CRN stays on the course. `move_course` does not clear it when the destination catalog uses a different section. Two listings may land in one term when their CRNs differ.
+A chosen CRN stays on the course. `move_course` does not clear it when the destination catalog uses a different section. Two listings may land in one term. When they do not count separately, `validation.duplicates` names the course. `move_course` moves the first row of that subject and number.
 
 ### set_section
 

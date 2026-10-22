@@ -146,7 +146,7 @@ public sealed class PlanToolTests : IDisposable
     }
 
     [Fact]
-    public void RepeatedCoursesNeedDistinctCrnsAndSetSectionChangesOnlyOnePin()
+    public void RepeatedCoursesStayOnThePlanAndSetSectionChangesOnlyOnePin()
     {
         var index = SharedCatalog.Library.ByCode["202710"];
         var course = index.Courses.First(item => index.Sections(item.Key).Count >= 3);
@@ -154,16 +154,13 @@ public sealed class PlanToolTests : IDisposable
         var created = _write.create_plan("Topics", ["Fall 2026"]);
         var id = (string)created["id"]!;
         var revision = (int)created["revision"]!;
+        var key = course.Key.ToString();
 
         var first = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn);
         revision = (int)first["revision"]!;
-        var again = Assert.Throws<ToolFailure>(() => _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision)));
-        Assert.Equal("invalid_argument", again.Code);
-        var same = Assert.Throws<ToolFailure>(() => _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn));
-        Assert.Equal("invalid_argument", same.Code);
-        Assert.Contains(sections[0].Crn, same.Message);
         var second = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[1].Crn);
         revision = (int)second["revision"]!;
+        Assert.DoesNotContain(key, Duplicates(second));
 
         var unchanged = _write.set_section(id, "Fall 2026", course.Subject, course.Number, sections[0].Crn, Rev(revision));
         Assert.Equal(revision, (int)unchanged["revision"]!);
@@ -171,12 +168,24 @@ public sealed class PlanToolTests : IDisposable
         Assert.Equal(revision, (int)alsoUnchanged["revision"]!);
         var ambiguous = Assert.Throws<ToolFailure>(() => _write.set_section(id, "Fall 2026", course.Subject, course.Number, sections[2].Crn, Rev(revision)));
         Assert.Equal("invalid_argument", ambiguous.Code);
+
+        var same = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision), sections[0].Crn);
+        revision = (int)same["revision"]!;
+        Assert.Contains(key, Duplicates(same));
+        var open = _write.add_course(id, "Fall 2026", course.Subject, course.Number, Rev(revision));
+        Assert.Contains(key, Duplicates(open));
+
         var loaded = new UserDataStore(_path).DegreePlan(Guid.Parse(id))!;
-        Assert.Equal(
-            [sections[0].Crn, sections[1].Crn],
-            loaded.Terms.Single().Courses.Select(item => item.SelectedCrn).OrderBy(crn => crn, StringComparer.Ordinal));
+        var pins = loaded.Terms.Single().Courses.Select(item => item.SelectedCrn).ToList();
+        Assert.Equal(4, pins.Count);
+        Assert.Equal(2, pins.Count(crn => crn == sections[0].Crn));
+        Assert.Equal(1, pins.Count(crn => crn == sections[1].Crn));
+        Assert.Contains(pins, crn => crn is null);
         var link = new UserDataStore(_path).Plans.Single(item => ScheduleLink.Owns(loaded.Id, item));
-        Assert.Single(link.Courses);
+        Assert.Equal(4, link.Courses.Count);
+        Assert.Equal(
+            [sections[0].Crn, sections[0].Crn, sections[1].Crn],
+            link.Courses.Select(item => item.PinnedCrn).Where(crn => crn is not null).OrderBy(crn => crn, StringComparer.Ordinal));
         Assert.Equal(
             [sections[0].Crn, sections[1].Crn],
             link.SelectedCRNs.OrderBy(crn => crn, StringComparer.Ordinal));
@@ -284,4 +293,10 @@ public sealed class PlanToolTests : IDisposable
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
     private static JsonElement Rev(int revision) => JsonSerializer.SerializeToElement(revision);
+
+    private static List<string> Duplicates(Dictionary<string, object?> plan)
+    {
+        var validation = (Dictionary<string, object?>)plan["validation"]!;
+        return (List<string>)validation["duplicates"]!;
+    }
 }

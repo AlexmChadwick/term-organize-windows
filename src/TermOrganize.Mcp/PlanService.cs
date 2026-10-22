@@ -71,8 +71,6 @@ public sealed class PlanService
             var term = EnsureTerm(plan, termLabel);
             EnsureKnown(key, term, crn);
             var incoming = DegreeCourseRepeats.CleanCrn(crn);
-            if (!DegreeCourseEntries.Allows(plan, key, incoming))
-                throw new ToolFailure("invalid_argument", DuplicateListing(plan, key, term, incoming));
             var details = _library.FindCourse(key)!;
             term.Courses.Add(new DegreePlanCourse(key, TextFormat.Sanitize(details.Title), details.MinCredits)
             {
@@ -104,8 +102,6 @@ public sealed class PlanService
                 throw new ToolFailure("invalid_argument", "from_term and to_term are the same.");
             var course = from.Courses.FirstOrDefault(item => item.Key == key)
                 ?? throw new ToolFailure("not_found", $"{key} is not in {from.Name}.");
-            if (!DegreeCourseEntries.Allows(plan, key, course.SelectedCrn, course.Id))
-                throw new ToolFailure("invalid_argument", $"{key} is already in {to.Name}.");
             from.Courses.Remove(course);
             to.Courses.Add(course);
         });
@@ -241,25 +237,9 @@ public sealed class PlanService
             schedule.TermCode = code;
             schedule.IsPrimary = false;
             schedule.UpdatedAt = plan.UpdatedAt;
-            var seen = new HashSet<CourseKey>();
-            var slots = new List<PlanCourse>();
-            foreach (var course in courses)
-            {
-                if (course.Key is not CourseKey key || !seen.Add(key)) continue;
-                slots.Add(new PlanCourse
-                {
-                    Key = key,
-                    IsRequired = true,
-                    ColorIndex = slots.Count % CourseColorPalette.Count,
-                });
-            }
-            schedule.Courses = slots;
-            schedule.SelectedCRNs = courses
-                .Select(course => course.SelectedCrn)
-                .Where(crn => !string.IsNullOrWhiteSpace(crn))
-                .Select(crn => crn!)
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
+            schedule.Courses = [];
+            schedule.SelectedCRNs = [];
+            DegreePlanSchedule.SyncRows(schedule, courses);
         }
         store.Plans.RemoveAll(item => ScheduleLink.Owns(plan.Id, item) && !keep.Contains(item.Id));
     }
@@ -381,19 +361,6 @@ public sealed class PlanService
         return term;
     }
 
-    private static string DuplicateListing(DegreePlan plan, CourseKey key, DegreePlanTerm term, string? crn)
-    {
-        var matches = plan.Terms
-            .SelectMany(item => item.Courses.Where(course => course.Key == key).Select(course => (Term: item, Course: course)))
-            .ToList();
-        if (crn is not null && matches.Any(item => string.Equals(DegreeCourseRepeats.CleanCrn(item.Course.SelectedCrn), crn, StringComparison.Ordinal)))
-            return $"{key} CRN {crn} is already on the plan.";
-        var where = matches.Count == 0 ? "completed courses" : matches[0].Term.Name;
-        if (crn is null)
-            return where == term.Name ? $"{key} is already in {where}." : $"{key} is already in {where}. Use move_course.";
-        return $"{key} is already in {where}. A second listing needs its own CRN on every copy.";
-    }
-
     private Dictionary<string, object?> Summary(DegreePlan plan) => new()
     {
         ["id"] = plan.Id.ToString("D"),
@@ -438,6 +405,7 @@ public sealed class PlanService
     {
         var body = new Dictionary<string, object?>
         {
+            ["id"] = course.Id.ToString("D"),
             ["subject"] = course.Key?.Subject ?? "",
             ["number"] = course.Key?.Number ?? "",
             ["title"] = TextFormat.Sanitize(course.Title),
@@ -490,6 +458,7 @@ public sealed class PlanService
         {
             ["clashes"] = clashes,
             ["not_offered"] = missing,
+            ["duplicates"] = DegreePlanAnalysis.DuplicateKeys(plan).Select(key => key.ToString()).OrderBy(key => key, StringComparer.Ordinal).ToList(),
         };
     }
 

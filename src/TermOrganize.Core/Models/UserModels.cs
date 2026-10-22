@@ -238,6 +238,9 @@ public sealed class DegreePlanCourse
     /// <summary>Section chosen for this course, when the plan names one. A repeated subject and number stays on the plan.</summary>
     public string? SelectedCrn { get; set; }
 
+    /// <summary>Section chosen for this course, when the plan names one. A repeated subject and number stays on the plan.</summary>
+    public string? SelectedCrn { get; set; }
+
     public DegreePlanCourse() { }
 
     public DegreePlanCourse(CourseKey? key, string title, double credits, string? label = null, Guid? id = null)

@@ -436,7 +436,7 @@ internal sealed class DegreeRequirementsPane : UserControl
         });
         _window.SetStatus(added
             ? $"Added {key} to {term.Name}."
-            : $"{key} is already on this plan. A second listing needs its own CRN.");
+            : $"{key} was not added. That semester is not on this plan.");
         PaintAudit();
         _onEdited?.Invoke();
     }

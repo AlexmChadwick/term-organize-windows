@@ -22,6 +22,22 @@ public sealed class Course
     public string? Department { get; set; }
     public bool DetailsLoaded { get; set; }
 
+    /// <summary>
+    /// True when the course details were loaded and they list no prerequisites.
+    /// A loaded course omits <see cref="Prereqs"/> when there are none. A course whose
+    /// details were not loaded leaves the property null too, and that is unknown, not none.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasNoPrerequisites => DetailsLoaded && Prereqs?.Simplified() is null;
+
+    /// <summary>
+    /// True when the course details were loaded and they list no corequisites.
+    /// Same split as <see cref="HasNoPrerequisites"/>: omitted on a loaded course means none,
+    /// and null before the details load means unknown.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasNoCorequisites => DetailsLoaded && Coreqs?.Simplified() is null;
+
     [JsonIgnore] public CourseKey Key => new(Subject, Number);
     [JsonIgnore] public string Code => Key.ToString();
     [JsonIgnore] public string CreditsLabel => CreditFormatter.Label(MinCredits, MaxCredits);

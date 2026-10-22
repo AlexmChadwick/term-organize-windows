@@ -94,6 +94,8 @@
     <ProjectReference Include="..\TermOrganize.Core\TermOrganize.Core.csproj" />
     <Content Include="..\TermOrganize.Core\Catalog\term-202710.json.gz" Link="Catalog\term-202710.json.gz" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\TermOrganize.Core\Catalog\term-202710.catalog" Link="Catalog\term-202710.catalog" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Spring 2027 is gzip only. Load() never opens term-202730.catalog while this file is present. -->
+    <Content Include="..\TermOrganize.Core\Catalog\term-202730.json.gz" Link="Catalog\term-202730.json.gz" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\*.png" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>

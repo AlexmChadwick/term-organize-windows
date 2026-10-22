@@ -17,6 +17,8 @@
   <ItemGroup>
     <Content Include="Catalog\term-202710.json.gz" CopyToOutputDirectory="PreserveNewest" Link="Catalog\term-202710.json.gz" />
     <Content Include="Catalog\term-202710.catalog" CopyToOutputDirectory="PreserveNewest" Link="Catalog\term-202710.catalog" />
+    <!-- Load() reads gzip before .catalog. term-202730.catalog stays on disk for the LZFSE test and is not copied. -->
+    <Content Include="Catalog\term-202730.json.gz" CopyToOutputDirectory="PreserveNewest" Link="Catalog\term-202730.json.gz" />
     <EmbeddedResource Include="LICENSE.txt" />
   </ItemGroup>
 </Project>

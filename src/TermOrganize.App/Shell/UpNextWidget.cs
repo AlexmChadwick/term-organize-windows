@@ -141,11 +141,7 @@ internal static class UpNextLines
             try { catalog = TermCatalogCache.TryLoad(code); } catch (Exception) { catalog = null; }
             if (catalog is null)
             {
-                try
-                {
-                    var bundled = BundledCatalog.Load();
-                    if (bundled.Term.Code == code) catalog = bundled;
-                }
+                try { catalog = BundledCatalog.TryLoad(code); }
                 catch (Exception) { catalog = null; }
             }
             return Current(store, catalog is null ? null : CatalogIndex.Build(catalog), TermCalendar.Now());

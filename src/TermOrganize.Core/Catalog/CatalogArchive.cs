@@ -68,36 +68,126 @@ public static class CatalogArchive
 
 public static class BundledCatalog
 {
-    public const string DefaultTerm = "202710";
-
-    public static TermCatalog Load(string termCode = DefaultTerm)
+    /// <summary>The newest bundled term. A launch with no saved catalog opens this snapshot.</summary>
+    public static string DefaultTerm
     {
-        var names = new[] { $"term-{termCode}.json.gz", $"term-{termCode}.catalog", $"term-{termCode}.json" };
-        foreach (var name in names)
+        get
+        {
+            var codes = TermCodes();
+            return codes.Count == 0 ? "202710" : codes[^1];
+        }
+    }
+
+    public static TermCatalog Load(string? termCode = null) =>
+        TryLoad(termCode ?? DefaultTerm) ?? throw new FileNotFoundException($"No bundled catalog for term {termCode ?? DefaultTerm}.");
+
+    public static TermCatalog? TryLoad(string termCode)
+    {
+        foreach (var name in FileNames(termCode))
         {
             var path = Resolve(name);
             if (path is not null) return CatalogArchive.Read(path);
         }
-        throw new FileNotFoundException($"No bundled catalog for term {termCode}.");
+        return null;
     }
+
+    /// <summary>Bundled term codes, oldest first. <see cref="DefaultTerm"/> is the last one.</summary>
+    public static IReadOnlyList<string> TermCodes()
+    {
+        var codes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var directory in CandidateDirectories())
+        {
+            try
+            {
+                if (!Directory.Exists(directory)) continue;
+                foreach (var file in Directory.EnumerateFiles(directory))
+                {
+                    var code = CatalogArchive.TermCode(file);
+                    if (code is not null) codes.Add(code);
+                }
+            }
+            catch (Exception) { continue; }
+        }
+        return codes.OrderBy(code => code, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>Bundled terms, newest first, using the same file each <see cref="Load"/> call would open.</summary>
+    public static IReadOnlyList<Term> BundledTerms()
+    {
+        var terms = new List<Term>();
+        foreach (var code in TermCodes().OrderByDescending(code => code, StringComparer.Ordinal))
+        {
+            var catalog = TryLoad(code);
+            if (catalog is not null) terms.Add(catalog.Term);
+        }
+        return terms;
+    }
+
+    /// <summary>
+    /// Title-bar terms. The loaded term stays first, then live Banner terms, then any
+    /// bundled term those two did not already include.
+    /// </summary>
+    public static List<Term> PickerTerms(Term? loaded, IEnumerable<Term> live, IEnumerable<Term>? bundled = null)
+    {
+        var result = new List<Term>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Add(Term term)
+        {
+            if (term.Code.Length == 0 || !seen.Add(term.Code)) return;
+            result.Add(term);
+        }
+        if (loaded is not null) Add(loaded);
+        foreach (var term in live) Add(term);
+        foreach (var term in bundled ?? BundledTerms()) Add(term);
+        return result;
+    }
+
+    /// <summary>
+    /// Term opened at startup. A saved code that is bundled, or that
+    /// <paramref name="isCached"/> reports as already downloaded, wins.
+    /// Otherwise <see cref="DefaultTerm"/>.
+    /// </summary>
+    public static string StartupTerm(string? savedCode, Func<string, bool>? isCached = null)
+    {
+        if (!string.IsNullOrEmpty(savedCode) && (TermCodes().Contains(savedCode) || (isCached?.Invoke(savedCode) ?? false)))
+            return savedCode;
+        return DefaultTerm;
+    }
+
+    /// <summary>
+    /// The row to highlight. A catalog the session already opened wins. Otherwise a
+    /// saved choice, then <see cref="DefaultTerm"/>.
+    /// </summary>
+    public static string SelectedCode(string? loadedCode, string? savedCode)
+    {
+        if (!string.IsNullOrEmpty(loadedCode)) return loadedCode;
+        if (!string.IsNullOrEmpty(savedCode)) return savedCode;
+        return DefaultTerm;
+    }
+
+    /// <summary>Gzip first. The Mac <c>.catalog</c> is only opened when gzip is absent.</summary>
+    private static string[] FileNames(string termCode) =>
+        [$"term-{termCode}.json.gz", $"term-{termCode}.catalog", $"term-{termCode}.json"];
 
     public static string? Resolve(string fileName)
     {
-        var candidates = new[]
+        foreach (var directory in CandidateDirectories())
         {
-            Path.Combine(AppContext.BaseDirectory, "Catalog", fileName),
-            Path.Combine(AppContext.BaseDirectory, fileName),
-        };
-        foreach (var candidate in candidates)
+            var candidate = Path.Combine(directory, fileName);
             if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    private static IEnumerable<string> CandidateDirectories()
+    {
+        yield return Path.Combine(AppContext.BaseDirectory, "Catalog");
+        yield return AppContext.BaseDirectory;
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (var i = 0; i < 6 && dir is not null; i++, dir = dir.Parent)
         {
-            var nested = Path.Combine(dir.FullName, "src", "TermOrganize.Core", "Catalog", fileName);
-            if (File.Exists(nested)) return nested;
-            var direct = Path.Combine(dir.FullName, "Catalog", fileName);
-            if (File.Exists(direct)) return direct;
+            yield return Path.Combine(dir.FullName, "src", "TermOrganize.Core", "Catalog");
+            yield return Path.Combine(dir.FullName, "Catalog");
         }
-        return null;
     }
 }

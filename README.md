@@ -40,7 +40,7 @@ On Windows, the same check is:
 
 ## Data
 
-User data is a JSON file at `%LOCALAPPDATA%\TermOrganize\user-data.json`. Settings can export and import it. The bundled catalog is Fall 2026 (`term-202710`), as gzip and as the Mac app's LZFSE `.catalog`. New catalogs this port writes are gzip. Live sections come from `nubanner.neu.edu`. Degree requirements are parsed from `catalog.northeastern.edu` HTML.
+User data is a JSON file at `%LOCALAPPDATA%\TermOrganize\user-data.json`. Settings can export and import it. The bundled catalogs are Fall 2026 (`term-202710`, gzip and the Mac LZFSE `.catalog`) and Spring 2027 (`term-202730.json.gz`). The loader reads gzip before `.catalog`. A fresh launch opens the newest bundled term. A saved term opens again when that snapshot is bundled or already downloaded. New catalogs this port writes are gzip. Live sections come from `nubanner.neu.edu`. Degree requirements are parsed from `catalog.northeastern.edu` HTML.
 
 ## Keyboard
 

@@ -101,34 +101,6 @@ public static class DegreePlanEditing
     private static bool CanPlace(DegreePlanCourse course, DegreePlan plan) =>
         course.Key is not CourseKey key || DegreeCourseEntries.Allows(plan, key, course.SelectedCrn);
 
-    /// <summary>
-    /// Sets or clears the CRN on one row. A blank value clears it. The change is kept only when
-    /// every listing of that subject and number still has a different manual CRN.
-    /// </summary>
-    public static bool SetSelectedCrn(Guid courseId, string? crn, DegreePlan plan)
-    {
-        var course = Find(courseId, plan);
-        if (course is null) return false;
-        var cleaned = DegreeCourseRepeats.CleanCrn(crn);
-        if (course.Key is CourseKey key && !DegreeCourseEntries.Allows(plan, key, cleaned, course.Id)) return false;
-        course.SelectedCrn = cleaned;
-        return true;
-    }
-
-    /// <summary>The first semester that already lists <paramref name="key"/>, so a second row can join that same term.</summary>
-    public static DegreePlanTerm? TermWith(CourseKey key, DegreePlan plan) =>
-        plan.Terms.FirstOrDefault(term => term.Courses.Any(course => course.Key == key));
-
-    private static DegreePlanCourse? Find(Guid courseId, DegreePlan plan)
-    {
-        foreach (var course in plan.Completed)
-            if (course.Id == courseId) return course;
-        foreach (var term in plan.Terms)
-            foreach (var course in term.Courses)
-                if (course.Id == courseId) return course;
-        return null;
-    }
-
     public static void ReplacePlannedCourse(Guid courseId, DegreePlanCourse replacement, DegreePlan plan)
     {
         foreach (var term in plan.Terms)

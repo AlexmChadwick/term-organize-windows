@@ -10,6 +10,18 @@ The window follows the Mac app: one window, a sidebar (Search, Subjects, Saved, 
 
 All of the course, schedule, and degree logic lives in `src/TermOrganize.Core`, a .NET 9 class library that builds and tests on Linux. The WinUI 3 shell in `src/TermOrganize.App` is what Windows packages. On Linux, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj -p:EnableWindowsTargeting=true -p:Platform=x64` compiles that shell's C# against the Windows App SDK reference assemblies. The XAML compiler does not run on Linux. How each Swift area was carried over is in [PARITY.md](PARITY.md).
 
+## Install
+
+Term Organize is an early beta. It is unofficial and not affiliated with Northeastern University.
+
+Builds are posted on the [Releases page](https://github.com/AlexmChadwick/term-organize-windows/releases) when available. Each release has an MSIX package and a portable zip for x64 and arm64, plus `SHA256SUMS`.
+
+- **Zip:** unzip `TermOrganize-<tag>-win-<arch>.zip` anywhere and run `TermOrganize.App.exe`.
+- **MSIX:** test builds are signed with a test certificate, not a trusted one. Run the included `install-test-cert.ps1` (or import `TermOrganize-Test.cer` into Trusted People) first, install the matching `Microsoft.WindowsAppRuntime` MSIX, then open the Term Organize MSIX.
+- Windows SmartScreen may warn that the app is unrecognized because it is not signed with a trusted certificate. Choose **More info**, then **Run anyway**.
+
+To build from source, see "Build the app (Windows)" below.
+
 ## Build the logic (Linux, macOS, or Windows)
 
 Requires the .NET 9 SDK.

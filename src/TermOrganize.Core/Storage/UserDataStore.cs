@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace TermOrganize.Core;
@@ -9,45 +10,41 @@ namespace TermOrganize.Core;
 /// Plans, watchlist, bookmarks and preferences as JSON. Saves are written immediately
 /// so a closed window does not drop an edit. iCloud is not available on Windows;
 /// <see cref="ExportTo"/> and <see cref="ImportReplacing"/> move the same file between machines.
+/// A save that finds a newer file on disk merges plans it did not also edit, and keeps
+/// the on-disk copy of a plan both sides edited.
 /// </summary>
 public sealed class UserDataStore
 {
     private readonly string _path;
+    private readonly object _gate = new();
     private bool _applyingRemote;
+    private bool _writing;
+    private UserData _baseline = new();
+    private string _diskHash = "";
+    private DateTime _diskWriteTimeUtc;
+    private FileSystemWatcher? _watcher;
+    private Timer? _reloadTimer;
+    private TimeSpan _reloadDelay = TimeSpan.FromMilliseconds(300);
 
-    public AppPreferences Preferences { get; private set; }
-    public List<SavedCourse> Saved { get; private set; }
-    public List<RecentCourse> Recents { get; private set; }
-    public List<SchedulePlan> Plans { get; private set; }
-    public List<WatchItem> Watchlist { get; private set; }
-    public List<string> SearchHistory { get; private set; }
-    public List<DegreePlan> DegreePlans { get; private set; }
+    public AppPreferences Preferences { get; private set; } = new();
+    public List<SavedCourse> Saved { get; private set; } = [];
+    public List<RecentCourse> Recents { get; private set; } = [];
+    public List<SchedulePlan> Plans { get; private set; } = [];
+    public List<WatchItem> Watchlist { get; private set; } = [];
+    public List<string> SearchHistory { get; private set; } = [];
+    public List<DegreePlan> DegreePlans { get; private set; } = [];
 
     public Action? OnPlansChanged { get; set; }
     public Action? DidChange { get; set; }
+    /// <summary>Raised after an outside edit is reloaded, or folded in on the next save.</summary>
+    public event Action? ExternalEditApplied;
     public bool IsApplyingRemoteChanges => _applyingRemote;
 
     public UserDataStore(string? filePath = null)
     {
         _path = filePath ?? DefaultPath();
-        UserData stored;
-        try
-        {
-            stored = File.Exists(_path)
-                ? JsonSerializer.Deserialize<UserData>(File.ReadAllText(_path), AppJson.UserData) ?? new UserData()
-                : new UserData();
-        }
-        catch (JsonException)
-        {
-            stored = new UserData();
-        }
-        Preferences = stored.Preferences;
-        Saved = stored.Saved;
-        Recents = stored.Recents;
-        Plans = stored.Plans;
-        Watchlist = stored.Watchlist;
-        SearchHistory = stored.SearchHistory;
-        DegreePlans = stored.DegreePlans;
+        lock (_gate)
+            LoadInitial();
     }
 
     public static string DefaultPath()
@@ -57,6 +54,45 @@ public sealed class UserDataStore
     }
 
     public string FilePath => _path;
+
+    /// <summary>
+    /// Reloads when another process writes this file. Events are debounced so a temp-file
+    /// rename settles into one read. The revision checked before each save is the SHA-256
+    /// of the file bytes, recorded with the UTC write time.
+    /// </summary>
+    public void WatchForExternalEdits(TimeSpan? debounce = null)
+    {
+        StopWatching();
+        _reloadDelay = debounce is { } delay && delay > TimeSpan.Zero ? delay : TimeSpan.FromMilliseconds(300);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(_path));
+        if (string.IsNullOrEmpty(directory)) return;
+        Directory.CreateDirectory(directory);
+        _reloadTimer = new Timer(_ => ReloadFromDisk(), null, Timeout.Infinite, Timeout.Infinite);
+        var watcher = new FileSystemWatcher(directory, Path.GetFileName(_path))
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+            EnableRaisingEvents = true,
+        };
+        watcher.Changed += OnDiskEvent;
+        watcher.Created += OnDiskEvent;
+        watcher.Renamed += OnDiskEvent;
+        _watcher = watcher;
+    }
+
+    public void StopWatching()
+    {
+        if (_watcher is not null)
+        {
+            _watcher.EnableRaisingEvents = false;
+            _watcher.Changed -= OnDiskEvent;
+            _watcher.Created -= OnDiskEvent;
+            _watcher.Renamed -= OnDiskEvent;
+            _watcher.Dispose();
+            _watcher = null;
+        }
+        _reloadTimer?.Dispose();
+        _reloadTimer = null;
+    }
 
     public UserData Data() => new()
     {
@@ -202,13 +238,13 @@ public sealed class UserDataStore
         PlansChanged();
     }
 
-    public bool AddCourse(CourseKey key, Guid planId, bool required = true)
+    public bool AddCourse(CourseKey key, Guid planId, bool required = true, double? credits = null)
     {
         var added = false;
         UpdatePlan(planId, plan =>
         {
             if (plan.Contains(key)) return;
-            plan.Courses.Add(new PlanCourse { Key = key, IsRequired = required, ColorIndex = plan.NextColorIndex });
+            plan.Courses.Add(new PlanCourse { Key = key, IsRequired = required, ColorIndex = plan.NextColorIndex, Credits = credits });
             added = true;
         });
         return added;
@@ -386,7 +422,8 @@ public sealed class UserDataStore
         DegreePlans = updated.DegreePlans;
         if (plansChanged) Plans = updated.Plans;
         _applyingRemote = false;
-        WriteFile();
+        var merged = WriteFile();
+        if (merged) ExternalEditApplied?.Invoke();
         if (plansChanged) OnPlansChanged?.Invoke();
     }
 
@@ -402,8 +439,9 @@ public sealed class UserDataStore
         SearchHistory = data.SearchHistory;
         DegreePlans = data.DegreePlans;
         _applyingRemote = false;
-        WriteFile();
+        var merged = WriteFile();
         if (!remote) DidChange?.Invoke();
+        if (merged) ExternalEditApplied?.Invoke();
         if (plansChanged) OnPlansChanged?.Invoke();
     }
 
@@ -416,16 +454,224 @@ public sealed class UserDataStore
     private void Save(bool report = true)
     {
         if (_applyingRemote) return;
-        WriteFile();
+        var merged = WriteFile();
         if (report) DidChange?.Invoke();
+        if (merged) ExternalEditApplied?.Invoke();
     }
 
-    private void WriteFile()
+    private bool WriteFile()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_path))!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(Data(), AppJson.UserData));
-        File.Move(temp, _path, overwrite: true);
+        lock (_gate)
+            return WriteFileLocked();
+    }
+
+    /// <summary>
+    /// Writes the current memory. When the file hash or write time no longer matches the
+    /// last load, plans edited on only one side are merged and a plan edited on both sides
+    /// keeps the disk copy.
+    /// </summary>
+    private bool WriteFileLocked()
+    {
+        _writing = true;
+        try
+        {
+            var merged = false;
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (!TryReadDisk(out _, out var diskData, out var changed, out var unreadable))
+                    continue;
+                if (unreadable)
+                    return false;
+                if (changed && diskData is not null)
+                {
+                    AssignFrom(UserDataMerge.Merge(_baseline, Data(), diskData));
+                    merged = true;
+                }
+                StampDegreePlanRevisions(_baseline, Data());
+                var payload = JsonSerializer.SerializeToUtf8Bytes(Data(), AppJson.UserData);
+                var directory = Path.GetDirectoryName(Path.GetFullPath(_path));
+                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+                if (File.Exists(_path))
+                {
+                    try { File.Copy(_path, _path + ".bak", overwrite: true); }
+                    catch (IOException) { }
+                }
+                var temp = _path + ".tmp";
+                File.WriteAllBytes(temp, payload);
+                File.Move(temp, _path, overwrite: true);
+                byte[] written;
+                try { written = File.ReadAllBytes(_path); }
+                catch (IOException) { continue; }
+                var writtenHash = Hash(written);
+                if (writtenHash != Hash(payload))
+                    continue;
+                _baseline = UserDataMerge.Clone(Data());
+                _diskHash = writtenHash;
+                _diskWriteTimeUtc = File.GetLastWriteTimeUtc(_path);
+                return merged;
+            }
+            return merged;
+        }
+        finally
+        {
+            _writing = false;
+        }
+    }
+
+    private void LoadInitial()
+    {
+        if (!File.Exists(_path))
+        {
+            Adopt(new UserData(), "");
+            return;
+        }
+        try
+        {
+            var bytes = File.ReadAllBytes(_path);
+            var data = JsonSerializer.Deserialize<UserData>(bytes, AppJson.UserData) ?? new UserData();
+            Adopt(data, Hash(bytes));
+        }
+        catch (JsonException)
+        {
+            Adopt(new UserData(), Hash(File.ReadAllBytes(_path)));
+        }
+        catch (IOException)
+        {
+            Adopt(new UserData(), "");
+        }
+    }
+
+    private void OnDiskEvent(object? sender, FileSystemEventArgs e) => ScheduleReload();
+
+    private void ScheduleReload()
+    {
+        try { _reloadTimer?.Change(_reloadDelay, Timeout.InfiniteTimeSpan); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void ReloadFromDisk()
+    {
+        var notify = false;
+        var wrote = false;
+        lock (_gate)
+        {
+            if (_writing)
+            {
+                ScheduleReload();
+                return;
+            }
+            if (!TryReadDisk(out var hash, out var disk, out var changed, out var unreadable) || unreadable || !changed)
+                return;
+            if (disk is null)
+            {
+                Adopt(new UserData(), "");
+                notify = true;
+            }
+            else if (UserDataMerge.Same(Data(), _baseline))
+            {
+                Adopt(disk, hash);
+                notify = true;
+            }
+            else
+            {
+                wrote = WriteFileLocked();
+                notify = true;
+            }
+        }
+        if (wrote) DidChange?.Invoke();
+        if (notify) ExternalEditApplied?.Invoke();
+    }
+
+    /// <summary>
+    /// False on a transient read error. <paramref name="changed"/> is true when the SHA-256
+    /// no longer matches the last load. A newer write time with the same hash is not a change.
+    /// <paramref name="unreadable"/> means the bytes are not UserData JSON, so a save must not replace them.
+    /// </summary>
+    private bool TryReadDisk(out string hash, out UserData? data, out bool changed, out bool unreadable)
+    {
+        hash = "";
+        data = null;
+        changed = false;
+        unreadable = false;
+        if (!File.Exists(_path))
+        {
+            changed = _diskHash.Length > 0;
+            return true;
+        }
+        byte[] bytes;
+        try { bytes = File.ReadAllBytes(_path); }
+        catch (IOException) { return false; }
+        hash = Hash(bytes);
+        DateTime mtime;
+        try { mtime = File.GetLastWriteTimeUtc(_path); }
+        catch (IOException) { mtime = default; }
+        if (hash == _diskHash)
+        {
+            if (mtime != _diskWriteTimeUtc) _diskWriteTimeUtc = mtime;
+            return true;
+        }
+        changed = true;
+        try { data = JsonSerializer.Deserialize<UserData>(bytes, AppJson.UserData) ?? new UserData(); }
+        catch (JsonException) { unreadable = true; }
+        return true;
+    }
+
+    private void Adopt(UserData data, string hash)
+    {
+        AssignFrom(data);
+        _baseline = UserDataMerge.Clone(data);
+        _diskHash = hash;
+        try { _diskWriteTimeUtc = File.Exists(_path) ? File.GetLastWriteTimeUtc(_path) : default; }
+        catch (IOException) { _diskWriteTimeUtc = default; }
+    }
+
+    private void AssignFrom(UserData data)
+    {
+        Preferences = data.Preferences;
+        Saved = data.Saved;
+        Recents = data.Recents;
+        Plans = data.Plans;
+        Watchlist = data.Watchlist;
+        SearchHistory = data.SearchHistory;
+        DegreePlans = data.DegreePlans;
+    }
+
+    private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+
+    /// <summary>
+    /// A new degree plan starts at revision 1. A plan whose contents changed, and whose
+    /// revision was not already advanced, increments by one.
+    /// </summary>
+    private static void StampDegreePlanRevisions(UserData baseline, UserData current)
+    {
+        var previous = new Dictionary<Guid, DegreePlan>();
+        foreach (var plan in baseline.DegreePlans)
+            previous[plan.Id] = plan;
+        foreach (var plan in current.DegreePlans)
+        {
+            if (!previous.TryGetValue(plan.Id, out var before))
+            {
+                if (plan.Revision < 1) plan.Revision = 1;
+                continue;
+            }
+            var shown = Math.Max(before.Revision, 1);
+            if (SamePlanIgnoringRevision(before, plan))
+            {
+                if (plan.Revision < 1) plan.Revision = shown;
+                continue;
+            }
+            if (plan.Revision <= before.Revision)
+                plan.Revision = shown + 1;
+        }
+    }
+
+    private static bool SamePlanIgnoringRevision(DegreePlan left, DegreePlan right)
+    {
+        var a = UserDataMerge.Clone(left);
+        var b = UserDataMerge.Clone(right);
+        a.Revision = 0;
+        b.Revision = 0;
+        return UserDataMerge.Same(a, b);
     }
 
     private static bool SamePlans(List<SchedulePlan> a, List<SchedulePlan> b) =>

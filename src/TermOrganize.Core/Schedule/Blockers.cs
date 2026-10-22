@@ -25,6 +25,13 @@ public sealed class ScheduleBlockerAnalysis
     public int RequiredCount { get; set; }
     public List<CourseKey> NotOffered { get; set; } = [];
     public List<CourseKey> FilteredOut { get; set; } = [];
+    public List<UnavailablePin> Unavailable { get; set; } = [];
+
+    public sealed class UnavailablePin
+    {
+        public CourseKey Key { get; set; }
+        public string Crn { get; set; } = "";
+    }
     public List<ScheduleBlockerOption> Options { get; set; } = [];
     public List<ScheduleDiagnostics.ConflictPair> ConflictingPairs { get; set; } = [];
     public bool IsIncomplete { get; set; }
@@ -85,7 +92,15 @@ public static partial class ScheduleGenerator
         {
             if (!basis.Courses[index].IsBlocked) continue;
             dead.Add(index);
-            if (basis.Courses[index].TotalSections == 0) analysis.NotOffered.Add(courses[index].Key);
+            if (!string.IsNullOrEmpty(basis.Courses[index].UnavailableCrn))
+            {
+                analysis.Unavailable.Add(new ScheduleBlockerAnalysis.UnavailablePin
+                {
+                    Key = courses[index].Key,
+                    Crn = basis.Courses[index].UnavailableCrn!,
+                });
+            }
+            else if (basis.Courses[index].TotalSections == 0) analysis.NotOffered.Add(courses[index].Key);
             else analysis.FilteredOut.Add(courses[index].Key);
         }
         var others = required.Where(index => !dead.Contains(index)).ToList();

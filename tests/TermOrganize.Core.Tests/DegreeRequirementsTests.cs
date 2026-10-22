@@ -509,7 +509,8 @@ public class DegreeRequirementsTests
         Assert.Equal(DegreeAudit.Status.Planned, result.Status);
         Assert.Equal(["CS 4973", "CS 4973 (2)"], result.Used.Select(use => use.Id).OrderBy(id => id, StringComparer.Ordinal));
         var counted = audit.RuleResults.SelectMany(item => item.Used).Concat(audit.Unused).ToList();
-        Assert.Single(counted, use => use.Key.ToString() == "MKTG 2602");
+        Assert.Equal(2, counted.Count(use => use.Key.ToString() == "MKTG 2602"));
+        Assert.Equal(["MKTG 2602", "MKTG 2602 (2)"], counted.Where(use => use.Key.ToString() == "MKTG 2602").Select(use => use.Id).OrderBy(id => id, StringComparer.Ordinal));
         Assert.Equal(counted.Count, counted.Select(use => use.Id).ToHashSet().Count);
         Assert.Equal(new HashSet<CourseKey> { Key("MKTG 2602") }, DegreePlanAnalysis.DuplicateKeys(plan));
     }
@@ -665,7 +666,9 @@ public class DegreeRequirementsTests
         Assert.Equal(done.TotalCount, done.SatisfiedCount);
 
         var shortPlan = Audit(["CS 3000", "CS 3200", "CS 1210"], ["CS 3500"]);
-        Assert.Equal(DegreeAudit.Status.Partial, shortPlan.NoteChecks.First(check => check.CheckKind is DegreeAudit.NoteCheck.Kind.MajorHours).Status);
+        var shortHours = shortPlan.NoteChecks.First(check => check.CheckKind is DegreeAudit.NoteCheck.Kind.MajorHours);
+        Assert.Equal(DegreeAudit.Status.Partial, shortHours.Status);
+        Assert.Equal("8 of 16 semester hours \u00b7 4 planned", shortHours.Detail);
         Assert.Equal("No co-op in the plan", shortPlan.NoteChecks.First(check => check.CheckKind is DegreeAudit.NoteCheck.Kind.Coop).Detail);
         Assert.True(shortPlan.SatisfiedCount < shortPlan.TotalCount);
     }

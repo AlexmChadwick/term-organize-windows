@@ -171,7 +171,6 @@ public static class DegreePlanAutofill
             }
         }
 
-        var done = draft.CompletedKeys;
         foreach (var plan in schedulePlans)
         {
             if (!plan.IsPrimary || plan.Courses.Count == 0) continue;
@@ -186,20 +185,67 @@ public static class DegreePlanAutofill
                 draft.Terms.Add(new DegreePlanTerm { Season = season, Year = banner.CalendarYear });
                 termPosition = draft.Terms.Count - 1;
             }
-            var present = draft.Terms[termPosition].Courses.Select(course => course.Key).OfType<CourseKey>().ToHashSet();
+            var claimed = new HashSet<Guid>();
+            var pool = draft.Terms[termPosition].Courses.Concat(draft.Completed).ToList();
             foreach (var planCourse in plan.Courses)
             {
-                if (present.Contains(planCourse.Key) || done.Contains(planCourse.Key)) continue;
                 var course = index?.Course(planCourse.Key);
-                draft.Terms[termPosition].Courses.Add(new DegreePlanCourse(
-                    planCourse.Key,
-                    DegreePlanFormat.ExportTitle(course?.Title ?? planCourse.Key.ToString()),
-                    course?.MaxCredits ?? 4));
-                present.Add(planCourse.Key);
+                var title = DegreePlanFormat.ExportTitle(course?.Title ?? planCourse.Key.ToString());
+                var credits = planCourse.Credits is double chosen && chosen > 0
+                    ? chosen
+                    : course?.StartingCredits ?? course?.MaxCredits ?? 4;
+                var pin = ChosenPin(planCourse, plan, index);
+                var match = pool
+                    .Where(row => row.Key == planCourse.Key && !claimed.Contains(row.Id))
+                    .Select(row => (Row: row, Score: PairScore(row, pin)))
+                    .Where(item => item.Score >= 0)
+                    .OrderBy(item => item.Score)
+                    .Select(item => item.Row)
+                    .FirstOrDefault();
+                if (match is not null)
+                {
+                    claimed.Add(match.Id);
+                    if (pin is not null && DegreeCourseRepeats.CleanCrn(match.SelectedCrn) is null)
+                        match.SelectedCrn = pin;
+                    if (planCourse.Credits is double chosenCredits && chosenCredits > 0)
+                        match.Credits = chosenCredits;
+                    continue;
+                }
+                var added = new DegreePlanCourse(planCourse.Key, title, credits) { SelectedCrn = pin };
+                draft.Terms[termPosition].Courses.Add(added);
+                pool.Add(added);
+                claimed.Add(added.Id);
             }
         }
         draft.SortTerms();
         return draft;
+    }
+
+    /// <summary>
+    /// The section a schedule row copies onto a degree plan. The row's own pin wins.
+    /// A single row whose only choice is one selected CRN still copies that CRN.
+    /// </summary>
+    private static string? ChosenPin(PlanCourse row, SchedulePlan plan, CatalogIndex? index)
+    {
+        var pin = DegreeCourseRepeats.CleanCrn(row.PinnedCrn);
+        if (pin is not null) return pin;
+        if (plan.Courses.Count(item => item.Key == row.Key) > 1 || index is null) return null;
+        var matches = plan.SelectedCRNs
+            .Select(DegreeCourseRepeats.CleanCrn)
+            .Where(crn => crn is not null && index.Section(crn!)?.CourseKey == row.Key)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
+    /// <summary>0 is the same CRN, 1 fills an open degree row, 2 pairs two open rows. -1 does not pair.</summary>
+    private static int PairScore(DegreePlanCourse row, string? pin)
+    {
+        var existing = DegreeCourseRepeats.CleanCrn(row.SelectedCrn);
+        if (pin is not null && existing is not null) return string.Equals(existing, pin, StringComparison.Ordinal) ? 0 : -1;
+        if (pin is not null && existing is null) return 1;
+        if (pin is null && existing is null) return 2;
+        return -1;
     }
 
     /// <summary>The next few semesters after the plan's last one (or after now), for "Add semester".</summary>

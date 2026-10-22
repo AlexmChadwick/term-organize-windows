@@ -13,6 +13,8 @@ public sealed class SearchPage : UserControl
     private readonly TextBox _query = new() { PlaceholderText = "Search courses, professors, or a 5-digit CRN" };
     private readonly CheckBox _open = new() { Content = "Open seats" };
     private readonly CheckBox _honors = new() { Content = "Honors" };
+    private readonly CheckBox _noPrereqs = new() { Content = "No prerequisites" };
+    private readonly CheckBox _noCoreqs = new() { Content = "No corequisites" };
     private readonly Button _subjects = new() { Content = "Subject" };
     private readonly Button _nupath = new() { Content = "NUpath" };
     private readonly Button _level = new() { Content = "Level" };
@@ -20,18 +22,32 @@ public sealed class SearchPage : UserControl
     private readonly Button _campus = new() { Content = "Campus" };
     private readonly Button _all = new() { Content = "All filters" };
     private readonly Button _clear = new() { Content = "Clear", Visibility = Visibility.Collapsed };
+    private readonly RadioButton _divisionAll = new() { Content = "All", IsChecked = true };
+    private readonly RadioButton _divisionUndergrad = new() { Content = "Undergrad" };
+    private readonly RadioButton _divisionGrad = new() { Content = "Grad" };
     private readonly SortableTable _results = new();
-    private readonly StackPanel _detail = new() { Spacing = 8 };
+    private readonly Grid _detail = new() { Padding = new Thickness(24, 0, 24, 0) };
     private readonly SearchFilters _filters = new();
+    private readonly string _divisionGroup = "CourseDivision" + Guid.NewGuid().ToString("N");
     private bool _filling;
     private SearchResponse? _response;
 
     public SearchPage(AppSession session)
     {
         _session = session;
+        _divisionAll.GroupName = _divisionGroup;
+        _divisionUndergrad.GroupName = _divisionGroup;
+        _divisionGrad.GroupName = _divisionGroup;
+        var division = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        division.Children.Add(_divisionAll);
+        division.Children.Add(_divisionUndergrad);
+        division.Children.Add(_divisionGrad);
         var filters = new WrapLayout { Spacing = 8 };
+        filters.Children.Add(division);
         filters.Children.Add(_open);
         filters.Children.Add(_honors);
+        filters.Children.Add(_noPrereqs);
+        filters.Children.Add(_noCoreqs);
         filters.Children.Add(_subjects);
         filters.Children.Add(_nupath);
         filters.Children.Add(_level);
@@ -48,8 +64,7 @@ public sealed class SearchPage : UserControl
         left.Children.Add(filters);
         Grid.SetRow(_results, 2);
         left.Children.Add(_results);
-        var scroll = Chrome.Details(_detail);
-        Content = new PaneSplit(left, scroll, 420) { Padding = Chrome.PagePadding };
+        Content = new PaneSplit(left, _detail, 420) { Padding = Chrome.PagePadding };
         Chrome.ClipToBounds(this);
 
         _query.TextChanged += (_, _) => { if (!_filling) Run(_query.Text); };
@@ -57,11 +72,24 @@ public sealed class SearchPage : UserControl
         _open.Unchecked += (_, _) => Apply();
         _honors.Checked += (_, _) => Apply();
         _honors.Unchecked += (_, _) => Apply();
+        _noPrereqs.Checked += (_, _) => Apply();
+        _noPrereqs.Unchecked += (_, _) => Apply();
+        _noCoreqs.Checked += (_, _) => Apply();
+        _noCoreqs.Unchecked += (_, _) => Apply();
+        _divisionAll.Checked += (_, _) => PickDivision(CourseDivision.All);
+        _divisionUndergrad.Checked += (_, _) => PickDivision(CourseDivision.Undergrad);
+        _divisionGrad.Checked += (_, _) => PickDivision(CourseDivision.Grad);
         _days.SelectionChanged += (_, _) => { if (!_filling) Apply(); };
         _results.RowChosen += tag => { if (tag is CourseKey key) ShowCourse(key); };
         _results.RowOpened += tag => { if (tag is CourseKey key) CourseWindow.Open(_session, key); };
         if (_session.Store.Preferences.PreferredCampus is string campus && campus.Length > 0)
             _filters.Campuses.Add(campus);
+        _filters.Division = _session.Store.Preferences.CourseDivision;
+        _filling = true;
+        _divisionAll.IsChecked = _filters.Division == CourseDivision.All;
+        _divisionUndergrad.IsChecked = _filters.Division == CourseDivision.Undergrad;
+        _divisionGrad.IsChecked = _filters.Division == CourseDivision.Grad;
+        _filling = false;
         BuildMenus();
         ShowEmpty();
     }
@@ -85,7 +113,8 @@ public sealed class SearchPage : UserControl
         foreach (var result in _response.Results.Take(200))
         {
             var saved = savedAt.TryGetValue(result.Course.Key, out var when);
-            rows.Add(CourseTable.Make(result, saved, saved ? when : null));
+            var note = CpsNotes.ForCourse(index.Sections(result.Course.Key));
+            rows.Add(CourseTable.Make(result, saved, saved ? when : null, note));
         }
         _results.Show(CourseTable.Columns, rows);
         _clear.Visibility = _filters.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
@@ -104,10 +133,25 @@ public sealed class SearchPage : UserControl
 
     private void Apply() => Run(_query.Text);
 
+    private void PickDivision(CourseDivision division)
+    {
+        if (_filling) return;
+        _filters.Division = division;
+        var prefs = _session.Store.Preferences;
+        if (prefs.CourseDivision != division)
+        {
+            prefs.CourseDivision = division;
+            _session.Store.ReplacePreferences(prefs);
+        }
+        Apply();
+    }
+
     private void ReadQuickFilters()
     {
         _filters.OpenSeatsOnly = _open.IsChecked == true;
         _filters.HonorsOnly = _honors.IsChecked == true;
+        _filters.NoPrerequisites = _noPrereqs.IsChecked == true;
+        _filters.NoCorequisites = _noCoreqs.IsChecked == true;
         _filters.AllowedDays = (_days.SelectedItem as DayChoice)?.Days;
     }
 
@@ -165,6 +209,18 @@ public sealed class SearchPage : UserControl
         _filters.EndsBefore = null;
         _open.IsChecked = false;
         _honors.IsChecked = false;
+        _noPrereqs.IsChecked = false;
+        _noCoreqs.IsChecked = false;
+        _filters.Division = CourseDivision.All;
+        _filling = true;
+        _divisionAll.IsChecked = true;
+        _filling = false;
+        var prefs = _session.Store.Preferences;
+        if (prefs.CourseDivision != CourseDivision.All)
+        {
+            prefs.CourseDivision = CourseDivision.All;
+            _session.Store.ReplacePreferences(prefs);
+        }
         BuildMenus(resetDays: true);
         Apply();
     }
@@ -285,6 +341,7 @@ public sealed class SearchPage : UserControl
             panel.Children.Add(button);
         }
         _detail.Children.Clear();
+        _detail.RowDefinitions.Clear();
         _detail.Children.Add(panel);
     }
 

@@ -216,6 +216,11 @@ public sealed class SchedulesPage : UserControl
         var index = _session.Index!;
         var title = index.Course(course.Key)?.Title ?? "";
         var panel = new StackPanel { Spacing = 4 };
+        var listed = index.Course(course.Key);
+        if (listed is not null && CpsNotes.ForCourse(index.Sections(course.Key)) is string cps)
+            panel.Children.Add(Chrome.Caption(cps));
+        if (listed is { IsVariableCredit: true })
+            panel.Children.Add(CreditBox(course, listed));
         var header = new Grid { ColumnSpacing = 8 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 80 });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -267,34 +272,85 @@ public sealed class SchedulesPage : UserControl
             var crn = section.Crn;
             consider.Checked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(false, crn, key, plan));
             consider.Unchecked += (_, _) => _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetExcluded(true, crn, key, plan));
+            var topics = index.Course(key)?.SpecialTopics == true;
             var onCalendar = new CheckBox { Content = "On the calendar", IsChecked = _plan!.SelectedCRNs.Contains(section.Crn) };
             onCalendar.Checked += (_, _) =>
             {
-                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan));
+                _session.Store.UpdatePlan(_plan!.Id, plan => PlanEditing.SetSection(crn, crns, plan, replaceOtherSections: !topics, courseKey: key));
                 ShowPlan();
             };
             onCalendar.Unchecked += (_, _) =>
             {
                 _session.Store.UpdatePlan(_plan!.Id, plan =>
                 {
-                    if (plan.SelectedCRNs.Contains(crn)) PlanEditing.SetSection(null, crns, plan);
+                    if (!plan.SelectedCRNs.Contains(crn)) return;
+                    if (topics) PlanEditing.ClearCrn(crn, plan);
+                    else PlanEditing.SetSection(null, crns, plan, courseKey: key);
                 });
                 ShowPlan();
             };
             line.Children.Add(consider);
             Grid.SetColumn(onCalendar, 1);
             line.Children.Add(onCalendar);
-            var sectionText = new TextBlock
+            var sectionBody = new StackPanel { Spacing = 2 };
+            sectionBody.Children.Add(new TextBlock
             {
                 Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn} \u00b7 {section.ScheduleSummary} \u00b7 {section.SeatsLabel}",
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-            };
+            });
+            if (section.CpsOnly == true)
+                sectionBody.Children.Add(Chrome.Caption(CpsNotes.Restricted));
+            var sectionText = sectionBody;
             Grid.SetColumn(sectionText, 2);
             line.Children.Add(sectionText);
             panel.Children.Add(line);
         }
         return panel;
+    }
+
+    private NumberBox CreditBox(PlanCourse course, Course listed)
+    {
+        var span = VariableCredits.Of(listed);
+        var chosen = course.Credits is double current && current > 0 ? span.Clamp(current) : span.Starting;
+        var box = new NumberBox
+        {
+            Header = VariableCredits.Caption(chosen, span),
+            Value = chosen,
+            Minimum = span.Low,
+            Maximum = span.High,
+            SmallChange = 1,
+            LargeChange = 1,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            Width = 180,
+        };
+        var updating = false;
+        box.ValueChanged += (_, args) =>
+        {
+            if (updating || double.IsNaN(args.NewValue) || _plan is null) return;
+            var next = span.Clamp(args.NewValue);
+            updating = true;
+            if (Math.Abs(box.Value - next) > 0.001) box.Value = next;
+            box.Header = VariableCredits.Caption(next, span);
+            updating = false;
+            _session.Store.UpdatePlan(_plan.Id, plan =>
+            {
+                var row = plan.Courses.FirstOrDefault(item => ReferenceEquals(item, course));
+                if (row is not null) row.Credits = next;
+            });
+            if (course.DegreeRowId is not Guid rowId) return;
+            foreach (var degree in _session.Store.DegreePlans.ToList())
+            {
+                if (degree.Terms.SelectMany(term => term.Courses).All(item => item.Id != rowId)) continue;
+                _session.Store.UpdateDegreePlan(degree.Id, plan =>
+                {
+                    var match = plan.Terms.SelectMany(term => term.Courses).FirstOrDefault(item => item.Id == rowId);
+                    if (match is not null) match.Credits = next;
+                });
+                break;
+            }
+        };
+        return box;
     }
 
     public void GenerateForCapture()
@@ -325,15 +381,8 @@ public sealed class SchedulesPage : UserControl
     private void Generate(bool applyFirst = false)
     {
         if (_plan is null || _session.Index is null) return;
-        var inputs = _plan.Courses.Select(course => new ScheduleCourseInput
-        {
-            Key = course.Key,
-            IsRequired = course.IsRequired,
-            Sections = _session.Index.Sections(course.Key),
-            ExcludedCrns = course.ExcludedCRNs.ToList(),
-            MinCredits = _session.Index.Course(course.Key)?.MinCredits,
-            MaxCredits = _session.Index.Course(course.Key)?.MaxCredits,
-        }).ToList();
+        var index = _session.Index;
+        var inputs = ScheduleCourseInputs.Inputs(_plan, index);
         var result = ScheduleGenerator.Generate(inputs, _plan.Filters, _plan.Preferences);
         _results.Children.Clear();
         _results.Children.Add(Chrome.Heading(result.TotalFound == 0 ? "No schedules" : $"{result.TotalFound} schedules"));
@@ -347,7 +396,7 @@ public sealed class SchedulesPage : UserControl
             var crns = schedule.Crns.ToList();
             use.Click += (_, _) =>
             {
-                _session.Store.UpdatePlan(_plan.Id, plan => plan.SelectedCRNs = crns);
+                _session.Store.UpdatePlan(_plan.Id, plan => PlanEditing.ApplyGeneratedSchedule(crns, index, plan));
                 _window.RefreshUpNext();
                 ShowPlan();
             };
@@ -357,7 +406,7 @@ public sealed class SchedulesPage : UserControl
         if (applyFirst && result.Schedules.Count > 0)
         {
             var crns = result.Schedules[0].Crns.ToList();
-            _session.Store.UpdatePlan(_plan.Id, plan => plan.SelectedCRNs = crns);
+            _session.Store.UpdatePlan(_plan.Id, plan => PlanEditing.ApplyGeneratedSchedule(crns, index, plan));
             var selected = SelectedSections().ToList();
             _week.Show(selected, key => _plan.Course(key)?.ColorIndex ?? 0, _session.Store.Preferences.CalendarStartHour, _session.Store.Preferences.CalendarEndHour, _session.Store.Preferences.ShowWeekends);
         }

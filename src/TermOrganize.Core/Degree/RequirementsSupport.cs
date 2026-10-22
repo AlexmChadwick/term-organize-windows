@@ -371,6 +371,7 @@ internal static class DegreePlanCopies
             {
                 case SubstitutionChange.CountCourseChange count:
                     builder.Append("count ").Append(count.Course);
+                    if (count.RowId is Guid row) builder.Append(' ').Append(row.ToString("D"));
                     break;
                 case SubstitutionChange.ReplaceChange replace:
                     var item = replace.Replacement;
@@ -628,6 +629,19 @@ public static partial class DegreeRequirementText
     internal static string? BlankToNull(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 }
 
+/// <summary>One degree-plan row. Repeated course numbers stay as separate rows.</summary>
+public readonly record struct DegreePlanCourseRow(Guid Id, CourseKey Key, string Title, double Credits, string? Semester)
+{
+    public string Label
+    {
+        get
+        {
+            var name = string.IsNullOrWhiteSpace(Title) ? Key.ToString() : $"{Key} {Title}";
+            return Semester is null ? name : $"{name} \u00b7 {Semester}";
+        }
+    }
+}
+
 /// <summary>A course in the plan, once, for pickers: completed courses first, then each semester's.</summary>
 public sealed class DegreePlanCourseChoice : IEquatable<DegreePlanCourseChoice>
 {
@@ -695,6 +709,28 @@ public static class DegreePlanRequirementInfo
             }
         }
         return choices;
+    }
+
+    /// <summary>One entry per degree-plan row, including a repeated subject and number.</summary>
+    public static List<DegreePlanCourseRow> DegreeCourseRows(this DegreePlan plan)
+    {
+        var rows = new List<DegreePlanCourseRow>();
+        foreach (var course in plan.Completed)
+            if (course.Key is CourseKey key)
+                rows.Add(new DegreePlanCourseRow(course.Id, key, course.Title, course.Credits, null));
+        foreach (var term in plan.Terms)
+            foreach (var course in term.Courses)
+                if (course.Key is CourseKey key)
+                    rows.Add(new DegreePlanCourseRow(course.Id, key, course.Title, course.Credits, term.ShortName));
+        return rows;
+    }
+
+    /// <summary>The row label, with <c>(2)</c> when the plan lists that course more than once.</summary>
+    public static string DuplicateRowLabel(this DegreePlan plan, DegreePlanCourseRow row)
+    {
+        var same = plan.DegreeCourseRows().Where(item => item.Key == row.Key).ToList();
+        if (same.Count < 2) return row.Label;
+        return $"{row.Label} ({same.FindIndex(item => item.Id == row.Id) + 1})";
     }
 
     /// <summary><c>Summer Session A 2027</c> → <c>Summer A 2027</c>.</summary>

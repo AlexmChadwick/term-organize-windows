@@ -60,6 +60,15 @@ public sealed class PlanCourse
     public bool IsRequired { get; set; } = true;
     public HashSet<string> ExcludedCRNs { get; set; } = [];
     public int ColorIndex { get; set; }
+    /// <summary>
+    /// The section chosen for this row. It stays set when that CRN leaves the catalog,
+    /// so generation can keep the row locked instead of offering every other section.
+    /// </summary>
+    public string? PinnedCrn { get; set; }
+    /// <summary>The degree-plan row this schedule row was copied from, when sync created it.</summary>
+    public Guid? DegreeRowId { get; set; }
+    /// <summary>Chosen credits for a variable-credit row. Null on older saves, which take the catalog default.</summary>
+    public double? Credits { get; set; }
     [JsonIgnore] public CourseKey Id => Key;
 }
 
@@ -128,6 +137,8 @@ public sealed class AppPreferences
     /// <summary>Minutes between seat checks while the app is open. The Mac app defaults to 15.</summary>
     public int SeatCheckMinutes { get; set; } = 15;
     public bool NotifyOnSeats { get; set; } = true;
+    /// <summary>Search split at course number 5000. All leaves every number in the results.</summary>
+    public CourseDivision CourseDivision { get; set; } = CourseDivision.All;
 }
 
 public enum PlanSeason
@@ -224,6 +235,8 @@ public sealed class DegreePlanCourse
     public string Label { get; set; } = "";
     public string Title { get; set; } = "";
     public double Credits { get; set; }
+    /// <summary>Section chosen for this course, when the plan names one. A repeated subject and number stays on the plan.</summary>
+    public string? SelectedCrn { get; set; }
 
     public DegreePlanCourse() { }
 
@@ -256,6 +269,8 @@ public sealed class DegreePlanTerm
 public sealed class DegreePlan
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Starts at 1. Each change of this plan increments it. MCP clients send it back as expected_revision.</summary>
+    public int Revision { get; set; }
     public string Name { get; set; } = "";
     public string? Program { get; set; }
     public string? StudentName { get; set; }
@@ -359,7 +374,7 @@ public sealed class RequirementReplacement
 [JsonConverter(typeof(SubstitutionChangeConverter))]
 public abstract class SubstitutionChange : IEquatable<SubstitutionChange>
 {
-    public static SubstitutionChange CountCourse(CourseKey key) => new CountCourseChange(key);
+    public static SubstitutionChange CountCourse(CourseKey key, Guid? rowId = null) => new CountCourseChange(key, rowId);
     public static SubstitutionChange Replace(RequirementReplacement replacement) => new ReplaceChange(replacement);
     public static SubstitutionChange Waive { get; } = new WaiveChange();
 
@@ -370,9 +385,15 @@ public abstract class SubstitutionChange : IEquatable<SubstitutionChange>
     public sealed class CountCourseChange : SubstitutionChange
     {
         public CourseKey Course { get; }
-        public CountCourseChange(CourseKey course) => Course = course;
-        public override bool Equals(SubstitutionChange? other) => other is CountCourseChange c && c.Course == Course;
-        public override int GetHashCode() => HashCode.Combine(1, Course);
+        /// <summary>The degree-plan row this substitution counts. Null on substitutions saved before rows were named.</summary>
+        public Guid? RowId { get; }
+        public CountCourseChange(CourseKey course, Guid? rowId = null)
+        {
+            Course = course;
+            RowId = rowId;
+        }
+        public override bool Equals(SubstitutionChange? other) => other is CountCourseChange c && c.Course == Course && c.RowId == RowId;
+        public override int GetHashCode() => HashCode.Combine(1, Course, RowId);
     }
 
     public sealed class ReplaceChange : SubstitutionChange
@@ -403,6 +424,7 @@ public sealed class RequirementSubstitution
 
 public sealed class UserData
 {
+    public const int SupportedVersion = 1;
     public int Version { get; set; } = 1;
     public AppPreferences Preferences { get; set; } = new();
     public List<SavedCourse> Saved { get; set; } = [];
@@ -460,8 +482,14 @@ public sealed class SubstitutionChangeConverter : JsonConverter<SubstitutionChan
         if (root.TryGetProperty("waive", out _)) return SubstitutionChange.Waive;
         if (root.TryGetProperty("countCourse", out var course))
         {
+            Guid? row = null;
+            if (course.ValueKind == JsonValueKind.Object
+                && course.TryGetProperty("row", out var rowElement)
+                && rowElement.ValueKind == JsonValueKind.String
+                && Guid.TryParse(rowElement.GetString(), out var parsed))
+                row = parsed;
             var key = Unwrap(course, options);
-            return SubstitutionChange.CountCourse(key);
+            return SubstitutionChange.CountCourse(key, row);
         }
         if (root.TryGetProperty("replace", out var replace))
         {
@@ -488,6 +516,7 @@ public sealed class SubstitutionChangeConverter : JsonConverter<SubstitutionChan
                 writer.WriteStartObject();
                 writer.WritePropertyName("_0");
                 JsonSerializer.Serialize(writer, course.Course, options);
+                if (course.RowId is Guid row) writer.WriteString("row", row.ToString("D"));
                 writer.WriteEndObject();
                 break;
             case SubstitutionChange.ReplaceChange replace:

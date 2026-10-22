@@ -94,6 +94,13 @@ public sealed class ScheduleCourseInput
 
     public double? MinCredits { get; set; }
     public double? MaxCredits { get; set; }
+
+    /// <summary>
+    /// When set, this slot may use only that CRN. Another section of the same course is not a substitute,
+    /// including when the pinned section is filtered out or no longer in the catalog.
+    /// </summary>
+    public string? PinnedCrn { get; set; }
+
     public CourseKey Id => Key;
 
     /// <summary>Whole credits the search uses. Null credits count as 0; a fractional credit rounds up.</summary>
@@ -122,6 +129,7 @@ public sealed class ScheduleCourseInput
         ExcludedCRNs = ExcludedCRNs.ToList(),
         MinCredits = MinCredits,
         MaxCredits = MaxCredits,
+        PinnedCrn = PinnedCrn,
     };
 }
 
@@ -231,16 +239,19 @@ public sealed class ScheduleDiagnostics
         public int TotalSections { get; set; }
         public int RemainingSections { get; set; }
         public Dictionary<ScheduleFilterReason, int> Rejections { get; set; } = [];
+        /// <summary>Set when a pinned CRN is not in this term's catalog. The row stays locked to it.</summary>
+        public string? UnavailableCrn { get; set; }
         public CourseKey Id => Key;
         public bool IsBlocked => RemainingSections == 0;
 
         public bool Equals(CourseReport? other) =>
             other is not null && Key == other.Key && IsRequired == other.IsRequired &&
             TotalSections == other.TotalSections && RemainingSections == other.RemainingSections &&
+            string.Equals(UnavailableCrn, other.UnavailableCrn, StringComparison.Ordinal) &&
             Rejections.Count == other.Rejections.Count && Rejections.All(p => other.Rejections.TryGetValue(p.Key, out var n) && n == p.Value);
 
         public override bool Equals(object? obj) => Equals(obj as CourseReport);
-        public override int GetHashCode() => HashCode.Combine(Key, IsRequired, TotalSections, RemainingSections);
+        public override int GetHashCode() => HashCode.Combine(Key, IsRequired, TotalSections, RemainingSections, UnavailableCrn);
     }
 
     public enum ConflictCause { Overlap, TravelTime }
@@ -669,6 +680,22 @@ public static partial class ScheduleGenerator
                     }
                 }
             }
+            var pin = string.IsNullOrWhiteSpace(course.PinnedCrn) ? null : course.PinnedCrn.Trim();
+            if (pin is not null && course.Sections.All(section => !string.Equals(section.Crn, pin, StringComparison.Ordinal)))
+            {
+                kept.Add([]);
+                reports.Add(new ScheduleDiagnostics.CourseReport
+                {
+                    Key = course.Key,
+                    IsRequired = course.IsRequired,
+                    TotalSections = 0,
+                    RemainingSections = 0,
+                    UnavailableCrn = pin,
+                });
+                continue;
+            }
+            if (pin is not null)
+                remaining.RemoveAll(section => !string.Equals(section.Crn, pin, StringComparison.Ordinal));
             kept.Add(remaining);
             reports.Add(new ScheduleDiagnostics.CourseReport
             {

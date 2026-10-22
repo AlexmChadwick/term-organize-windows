@@ -16,23 +16,148 @@ public static class DegreePlanSchedule
     /// </summary>
     public static DegreeScheduleBuild? ForSemester(DegreePlanTerm semester, string termCode, UserDataStore store)
     {
-        var seen = new HashSet<CourseKey>();
-        var keys = new List<CourseKey>();
-        foreach (var course in semester.Courses)
-        {
-            if (course.Key is not CourseKey key || !seen.Add(key)) continue;
-            keys.Add(key);
-        }
-        if (keys.Count == 0) return null;
+        var rows = semester.Courses.Where(course => course.Key is not null).ToList();
+        if (rows.Count == 0) return null;
 
-        var wanted = keys.ToHashSet();
-        var existing = store.PlansIn(termCode).FirstOrDefault(plan =>
-            plan.Courses.Select(course => course.Key).ToHashSet().SetEquals(wanted));
-        if (existing is not null) return new DegreeScheduleBuild(existing, false, keys.Count);
+        var existing = store.PlansIn(termCode).FirstOrDefault(plan => RowsMatch(plan, rows));
+        if (existing is not null)
+        {
+            store.UpdatePlan(existing.Id, plan => SyncRows(plan, rows));
+            return new DegreeScheduleBuild(store.Plan(existing.Id) ?? existing, false, rows.Count);
+        }
 
         var name = DegreePlanEditing.ScheduleName(semester, store.PlansIn(termCode).Select(plan => plan.Name));
         var schedule = store.CreatePlan(name, termCode);
-        foreach (var key in keys) store.AddCourse(key, schedule.Id);
-        return new DegreeScheduleBuild(store.Plan(schedule.Id) ?? schedule, true, keys.Count);
+        store.UpdatePlan(schedule.Id, plan => SyncRows(plan, rows));
+        return new DegreeScheduleBuild(store.Plan(schedule.Id) ?? schedule, true, rows.Count);
+    }
+
+    /// <summary>
+    /// Copies each degree-plan row onto the schedule. A repeated subject and number stays a second row.
+    /// Returns how many rows were added and how many new CRNs were copied.
+    /// </summary>
+    public static (int Added, int Pins) SyncRows(SchedulePlan schedule, IEnumerable<DegreePlanCourse> courses)
+    {
+        var added = 0;
+        var pins = 0;
+        var used = new HashSet<int>();
+        foreach (var course in courses)
+        {
+            if (course.Key is not CourseKey key) continue;
+            var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+            var index = MatchRow(schedule, course.Id, key, pin, used);
+            if (index < 0)
+            {
+                schedule.Courses.Add(new PlanCourse
+                {
+                    Key = key,
+                    IsRequired = true,
+                    ColorIndex = schedule.NextColorIndex,
+                    PinnedCrn = pin,
+                    DegreeRowId = course.Id,
+                    Credits = course.Credits > 0 ? course.Credits : null,
+                });
+                if (pin is not null && !schedule.SelectedCRNs.Contains(pin))
+                {
+                    schedule.SelectedCRNs.Add(pin);
+                    pins++;
+                }
+                added++;
+                continue;
+            }
+            used.Add(index);
+            var row = schedule.Courses[index];
+            row.DegreeRowId = course.Id;
+            if (course.Credits > 0) row.Credits = course.Credits;
+            if (pin is null || string.Equals(DegreeCourseRepeats.CleanCrn(row.PinnedCrn), pin, StringComparison.Ordinal)) continue;
+            row.PinnedCrn = pin;
+            if (schedule.SelectedCRNs.Contains(pin)) continue;
+            schedule.SelectedCRNs.Add(pin);
+            pins++;
+        }
+        return (added, pins);
+    }
+
+    /// <summary>
+    /// Copies each distinct manual CRN onto the matching schedule row without removing a CRN already selected there.
+    /// A course that is not on the schedule is left alone.
+    /// </summary>
+    public static int CopyPins(SchedulePlan schedule, IEnumerable<DegreePlanCourse> courses)
+    {
+        var added = 0;
+        var used = new HashSet<int>();
+        foreach (var course in courses)
+        {
+            if (course.Key is not CourseKey key || !schedule.Contains(key)) continue;
+            var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+            if (pin is null) continue;
+            var index = MatchRow(schedule, course.Id, key, pin, used);
+            if (index < 0) continue;
+            used.Add(index);
+            var row = schedule.Courses[index];
+            if (string.IsNullOrWhiteSpace(row.PinnedCrn)) row.PinnedCrn = pin;
+            row.DegreeRowId ??= course.Id;
+            if (schedule.SelectedCRNs.Contains(pin)) continue;
+            schedule.SelectedCRNs.Add(pin);
+            added++;
+        }
+        return added;
+    }
+
+    /// <summary>Copies each schedule row's chosen credits onto the degree row it was synced from. Rows are not added or merged.</summary>
+    public static int PullCredits(DegreePlan plan, SchedulePlan schedule)
+    {
+        var changed = 0;
+        foreach (var row in schedule.Courses)
+        {
+            if (row.DegreeRowId is not Guid id || row.Credits is not double credits) continue;
+            foreach (var term in plan.Terms)
+            {
+                var match = term.Courses.FirstOrDefault(course => course.Id == id);
+                if (match is null) continue;
+                if (Math.Abs(match.Credits - credits) > 1e-6)
+                {
+                    match.Credits = credits;
+                    changed++;
+                }
+                break;
+            }
+        }
+        return changed;
+    }
+
+    private static bool RowsMatch(SchedulePlan plan, List<DegreePlanCourse> rows)
+    {
+        if (plan.Courses.Count != rows.Count) return false;
+        var left = plan.Courses
+            .Select(course => (course.Key, DegreeCourseRepeats.CleanCrn(course.PinnedCrn)))
+            .OrderBy(item => item.Key)
+            .ThenBy(item => item.Item2, StringComparer.Ordinal)
+            .ToList();
+        var right = rows
+            .Select(course => (course.Key!.Value, DegreeCourseRepeats.CleanCrn(course.SelectedCrn)))
+            .OrderBy(item => item.Item1)
+            .ThenBy(item => item.Item2, StringComparer.Ordinal)
+            .ToList();
+        return left.SequenceEqual(right);
+    }
+
+    private static int MatchRow(SchedulePlan schedule, Guid degreeRowId, CourseKey key, string? pin, HashSet<int> used)
+    {
+        for (var i = 0; i < schedule.Courses.Count; i++)
+        {
+            if (!used.Contains(i) && schedule.Courses[i].DegreeRowId == degreeRowId) return i;
+        }
+        var open = -1;
+        for (var i = 0; i < schedule.Courses.Count; i++)
+        {
+            if (used.Contains(i)) continue;
+            var row = schedule.Courses[i];
+            if (row.Key != key || row.DegreeRowId is not null) continue;
+            var existing = DegreeCourseRepeats.CleanCrn(row.PinnedCrn);
+            if (pin is not null && string.Equals(existing, pin, StringComparison.Ordinal)) return i;
+            if (existing is null && open < 0) open = i;
+        }
+        return open;
     }
 }

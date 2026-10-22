@@ -86,12 +86,16 @@ internal sealed class AuditEngine
                 Credits = course.Credits,
                 Semester = semester,
                 Order = currentOrder,
+                SelectedCrn = DegreeCourseRepeats.CleanCrn(course.SelectedCrn),
+                RowId = course.Id,
             };
             var earlier = _instances.TryGetValue(key, out var prior)
                 ? prior.Select(id => _pool[id]).ToList()
                 : [];
-            var repeated = earlier.FirstOrDefault(other => !CountsSeparately(use, other));
-            if (repeated is not null)
+            // A line with no credit is a placeholder, not a second course. Every other copy
+            // counts on its own, including two seminars with the same title or the same CRN.
+            // DuplicateKeys still warns about those. It does not drop them from the audit.
+            if (use.Credits <= 0 && earlier.FirstOrDefault() is DegreeAudit.CourseUse repeated)
             {
                 var better = repeated.IsCompleted == use.IsCompleted ? use.Credits > repeated.Credits : use.IsCompleted;
                 if (better)
@@ -177,7 +181,7 @@ internal sealed class AuditEngine
                 Rules = group.Rules.Select(ResultFor).ToList(),
             }).ToList(),
         }).ToList();
-        var courses = _pool.Values.ToList();
+        var courses = _pool.Values.Where(use => use.CountsTowardHours).ToList();
         var concentrationChosen = _plan.ConcentrationID is string concentrationId &&
             _requirements.Concentrations.Any(section => section.Id == concentrationId);
         var placements = new Dictionary<Guid, string>();
@@ -308,12 +312,13 @@ internal sealed class AuditEngine
             foreach (var substitution in Subs(rule.Id))
             {
                 if (substitution.Change is not SubstitutionChange.CountCourseChange count) continue;
-                var taken = StandIn(count.Course);
+                var taken = count.RowId is Guid row ? Row(row) : StandIn(count.Course);
                 if (taken is null)
                 {
                     _unmatched.Add(substitution);
                     continue;
                 }
+                if (count.RowId is not null) _pool[taken].CountsTowardHours = true;
                 Consume(taken, rule.Id, bySubstitution: true, satisfying: count.Course);
                 _optionsCounted[rule.Id] = _optionsCounted.GetValueOrDefault(rule.Id) + 1;
             }
@@ -445,11 +450,11 @@ internal sealed class AuditEngine
         }
         foreach (var use in _pool.Values)
         {
-            if (!counted.ContainsKey(use.Id) && CourseInRange(use.Key, ranges) is not null) counted[use.Id] = use;
+            if (use.CountsTowardHours && !counted.ContainsKey(use.Id) && CourseInRange(use.Key, ranges) is not null) counted[use.Id] = use;
         }
         var completed = counted.Values.Where(use => use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
         var planned = counted.Values.Where(use => !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
-        var (status, detail) = HoursStatus(completed, planned, required);
+        var (status, detail) = DegreeAudit.HoursStatus(completed, planned, required);
         return new DegreeAudit.NoteCheck
         {
             SectionId = sectionId,
@@ -462,7 +467,7 @@ internal sealed class AuditEngine
 
     private DegreeAudit.NoteCheck CoopCheck(string sectionId, string note)
     {
-        var coops = _pool.Values.Where(IsCoop).OrderBy(use => use.Order).ToList();
+        var coops = _pool.Values.Where(use => use.CountsTowardHours && IsCoop(use)).OrderBy(use => use.Order).ToList();
         DegreeAudit.Status status;
         string detail;
         if (coops.FirstOrDefault(use => use.IsCompleted) is DegreeAudit.CourseUse done)
@@ -599,12 +604,12 @@ internal sealed class AuditEngine
     private DegreeAudit.NoteCheck? UniversitywideCheck(string sectionId, string note)
     {
         if (_requirements.Universitywide is not UniversitywideRequirements minimums) return null;
-        var completed = _pool.Values.Where(use => use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
-        var planned = _pool.Values.Where(use => !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
+        var completed = _pool.Values.Where(use => use.CountsTowardHours && use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
+        var planned = _pool.Values.Where(use => use.CountsTowardHours && !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
         var items = new List<DegreeAudit.NoteCheck.Item>();
         if (minimums.TotalHours is double total)
         {
-            var (status, detail) = HoursStatus(completed, planned, total);
+            var (status, detail) = DegreeAudit.HoursStatus(completed, planned, total);
             items.Add(new DegreeAudit.NoteCheck.Item
             {
                 Id = "total-hours",
@@ -670,9 +675,9 @@ internal sealed class AuditEngine
 
     private DegreeAudit.NoteCheck TotalHoursCheck(string sectionId, string note, double required)
     {
-        var completed = _pool.Values.Where(use => use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
-        var planned = _pool.Values.Where(use => !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
-        var (status, detail) = HoursStatus(completed, planned, required);
+        var completed = _pool.Values.Where(use => use.CountsTowardHours && use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
+        var planned = _pool.Values.Where(use => use.CountsTowardHours && !use.IsCompleted).Sum(use => Math.Max(0, use.Credits));
+        var (status, detail) = DegreeAudit.HoursStatus(completed, planned, required);
         return new DegreeAudit.NoteCheck
         {
             SectionId = sectionId,
@@ -976,7 +981,7 @@ internal sealed class AuditEngine
 
     private string? StandIn(CourseKey required, HashSet<string>? claimed = null)
     {
-        bool Free(string id) => _available.Contains(id) && (claimed is null || !claimed.Contains(id));
+        bool Free(string id) => _available.Contains(id) && _pool[id].CountsTowardHours && (claimed is null || !claimed.Contains(id));
         if (_instances.TryGetValue(required, out var own))
         {
             var best = MinByComesFirst(own.Where(Free));
@@ -1031,8 +1036,15 @@ internal sealed class AuditEngine
         return null;
     }
 
+    private string? Row(Guid rowId)
+    {
+        foreach (var (id, use) in _pool)
+            if (use.RowId == rowId && _available.Contains(id)) return id;
+        return null;
+    }
+
     private List<DegreeAudit.CourseUse> Remaining() =>
-        _available.Select(id => _pool[id]).OrderBy(use => use.IsCompleted ? 0 : 1).ThenBy(use => use.Order).ToList();
+        _available.Select(id => _pool[id]).Where(use => use.CountsTowardHours).OrderBy(use => use.IsCompleted ? 0 : 1).ThenBy(use => use.Order).ToList();
 
     private DegreeAudit.RuleResult ResultFor(RequirementRule rule)
     {
@@ -1172,7 +1184,7 @@ internal sealed class AuditEngine
                 if (_instances.TryGetValue(equivalent, out var ids)) candidates.AddRange(ids);
             foreach (var id in candidates)
             {
-                if (!freeSet.Contains(id) || !claimed.Add(id)) continue;
+                if (!freeSet.Contains(id) || !_pool[id].CountsTowardHours || !claimed.Add(id)) continue;
                 current.Add((key, id));
                 Extend(position + 1);
                 claimed.Remove(id);
@@ -1347,9 +1359,6 @@ internal sealed class AuditEngine
     private bool CountsCourses(RequirementRule rule) =>
         _effective.GetValueOrDefault(rule.Id) is Effective.KindEffective { RuleKind: RequirementKind.Choose { Count: not null } };
 
-    private static bool CountsSeparately(DegreeAudit.CourseUse a, DegreeAudit.CourseUse b) =>
-        DegreeCourseRepeats.CountsSeparately(a.Title, a.Credits, b.Title, b.Credits);
-
     private static bool IsCoop(DegreeAudit.CourseUse use) =>
         use.Key.Subject == "COOP" || CoopTitlePattern().IsMatch(use.Title);
 
@@ -1373,17 +1382,6 @@ internal sealed class AuditEngine
         string.Join(" \u00b7 ", uses.Select(use => use.IsCompleted
             ? $"{use.Key} completed"
             : $"{use.Key} planned{(use.Semester is string semester ? $" \u00b7 {semester}" : "")}"));
-
-    private static (DegreeAudit.Status Status, string Detail) HoursStatus(double completed, double planned, double required)
-    {
-        var status = completed >= required ? DegreeAudit.Status.Complete
-            : completed + planned >= required ? DegreeAudit.Status.Planned
-            : completed + planned > 0 ? DegreeAudit.Status.Partial
-            : DegreeAudit.Status.Missing;
-        var detail = $"{DegreeAudit.HoursText(completed + planned)} of {DegreeAudit.HoursText(required)} semester hours";
-        if (planned > 0) detail += $" \u00b7 {DegreeAudit.HoursText(planned)} planned";
-        return (status, detail);
-    }
 
     private static string GpaText(double gpa)
     {

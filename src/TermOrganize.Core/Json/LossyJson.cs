@@ -17,6 +17,7 @@ public sealed class DegreePlanConverter : JsonConverter<DegreePlan>
         var plan = new DegreePlan
         {
             Id = GuidOrNew(root, "id"),
+            Revision = IntOr(root, "revision"),
             Name = StringOr(root, "name", "Degree Plan"),
             Program = StringOrNull(root, "program"),
             StudentName = StringOrNull(root, "studentName"),
@@ -69,6 +70,9 @@ public sealed class DegreePlanConverter : JsonConverter<DegreePlan>
 
     private static bool BoolOr(JsonElement root, string name, bool fallback) =>
         root.TryGetProperty(name, out var el) && el.ValueKind is JsonValueKind.True or JsonValueKind.False ? el.GetBoolean() : fallback;
+
+    private static int IntOr(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var el) && el.TryGetInt32(out var n) ? n : 0;
 
     private static int? IntOrNull(JsonElement root, string name) =>
         root.TryGetProperty(name, out var el) && el.TryGetInt32(out var n) ? n : null;

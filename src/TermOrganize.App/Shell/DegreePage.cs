@@ -166,9 +166,8 @@ public sealed class DegreePage : UserControl
         _terms.Children.Clear();
         _terms.Children.Add(Chrome.Body($"{_plan.Name} \u00b7 {_plan.CompletedCredits:0.#} completed \u00b7 {_plan.PlannedCredits:0.#} planned"));
         if (_plan.CatalogProgramTitle is not null) _terms.Children.Add(Chrome.Body(_plan.CatalogProgramTitle));
-        var duplicates = DegreePlanAnalysis.DuplicateKeys(_plan);
-        if (duplicates.Count > 0)
-            _terms.Children.Add(Chrome.Body("Listed more than once: " + string.Join(", ", duplicates)));
+        if (DegreePlanAnalysis.RepeatHeader(_plan) is string repeats)
+            _terms.Children.Add(Chrome.Body(repeats));
         if (_plan.Completed.Count > 0)
         {
             var done = new StackPanel { Spacing = 2 };
@@ -285,7 +284,15 @@ public sealed class DegreePage : UserControl
             };
         }
         var line = course.Key?.ToString() ?? course.Label;
-        row.Children.Add(Chrome.Body($"{line}  {course.Title}  ({course.Credits:0.#})"));
+        var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+        var summary = Chrome.Body(pin is null
+            ? $"{line}  {course.Title}  ({course.Credits:0.#})"
+            : $"{line}  {course.Title}  ({course.Credits:0.#})  CRN {pin}");
+        row.Children.Add(summary);
+        if (course.Key is CourseKey listedKey && CpsNote(listedKey) is string cps)
+            row.Children.Add(Chrome.Caption(cps));
+        if (course.Key is CourseKey creditKey && Listed(creditKey) is Course listed && listed.IsVariableCredit)
+            row.Children.Add(CreditBox(course, listed, summary, line, pin));
         var buttons = new WrapLayout { Spacing = 8 };
         var id = course.Id;
         if (!completed)
@@ -330,6 +337,69 @@ public sealed class DegreePage : UserControl
         return row;
     }
 
+    private NumberBox CreditBox(DegreePlanCourse course, Course listed, TextBlock summary, string line, string? pin)
+    {
+        var span = VariableCredits.Of(listed);
+        var chosen = course.Credits > 0 ? span.Clamp(course.Credits) : span.Starting;
+        var box = new NumberBox
+        {
+            Header = VariableCredits.Caption(chosen, span),
+            Value = chosen,
+            Minimum = span.Low,
+            Maximum = span.High,
+            SmallChange = 1,
+            LargeChange = 1,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            Width = 180,
+        };
+        var id = course.Id;
+        var updating = false;
+        box.ValueChanged += (_, args) =>
+        {
+            if (updating || double.IsNaN(args.NewValue) || _plan is null) return;
+            var next = span.Clamp(args.NewValue);
+            updating = true;
+            if (Math.Abs(box.Value - next) > 0.001) box.Value = next;
+            box.Header = VariableCredits.Caption(next, span);
+            summary.Text = pin is null
+                ? $"{line}  {course.Title}  ({next:0.#})"
+                : $"{line}  {course.Title}  ({next:0.#})  CRN {pin}";
+            updating = false;
+            _session.Store.UpdateDegreePlan(_plan.Id, plan =>
+            {
+                var row = plan.Completed.Concat(plan.Terms.SelectMany(term => term.Courses)).FirstOrDefault(item => item.Id == id);
+                if (row is not null) row.Credits = next;
+            });
+            foreach (var schedule in _session.Store.Plans.Where(item => item.Courses.Any(row => row.DegreeRowId == id)).ToList())
+            {
+                _session.Store.UpdatePlan(schedule.Id, plan =>
+                {
+                    var row = plan.Courses.FirstOrDefault(item => item.DegreeRowId == id);
+                    if (row is not null) row.Credits = next;
+                });
+            }
+        };
+        return box;
+    }
+
+    private Course? Listed(CourseKey key)
+    {
+        foreach (var index in _session.IndexesNewestFirst())
+            if (index.Course(key) is Course course) return course;
+        return _session.Course(key);
+    }
+
+    private string? CpsNote(CourseKey key)
+    {
+        foreach (var index in _session.IndexesNewestFirst())
+        {
+            var sections = index.Sections(key);
+            if (sections.Count == 0) continue;
+            return CpsNotes.ForCourse(sections);
+        }
+        return null;
+    }
+
     private WrapLayout AddCourseRow()
     {
         var add = new TextBox { PlaceholderText = "Add a course, such as CS 3000", MinWidth = 160 };
@@ -343,10 +413,20 @@ public sealed class DegreePage : UserControl
         button.Click += (_, _) =>
         {
             if (_plan is null || CourseKey.Parse(add.Text) is not CourseKey key || termBox.SelectedItem is not TermChoice choice) return;
-            var title = _session.Index?.Course(key)?.Title ?? "";
-            var credits = _session.Index?.Course(key)?.MaxCredits ?? 4;
+            var listedCourse = Listed(key);
+            var title = listedCourse?.Title ?? "";
+            var credits = listedCourse?.StartingCredits ?? 4;
+            var added = false;
+            string? note = null;
             _session.Store.UpdateDegreePlan(_plan.Id, plan =>
-                DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
+            {
+                var destination = plan.Terms.FirstOrDefault(item => item.Id == choice.Term.Id);
+                if (destination is not null)
+                    note = DegreePlanAnalysis.AddRepeatNote(plan, key, destination);
+                added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan);
+            });
+            if (!added) _window.SetStatus($"{key} was not added. That semester is not on this plan.");
+            else if (note is not null) _window.SetStatus(note);
             ShowPlan();
         };
         var row = new WrapLayout { Spacing = 8 };
@@ -439,12 +519,13 @@ public sealed class DegreePage : UserControl
         }
         var schedule = _session.Store.PrimaryPlan(_session.Term.Code) ?? _session.Store.CreatePlan(_plan.Name, _session.Term.Code);
         var added = 0;
-        foreach (var course in match.Courses)
-        {
-            if (course.Key is not CourseKey key) continue;
-            if (_session.Store.AddCourse(key, schedule.Id)) added++;
-        }
-        _window.SetStatus(added == 0 ? "Those courses are already on the schedule." : $"Added {added} courses to {schedule.Name}.");
+        var pins = 0;
+        _session.Store.UpdatePlan(schedule.Id, plan => (added, pins) = DegreePlanSchedule.SyncRows(plan, match.Courses));
+        _window.SetStatus(added == 0 && pins == 0
+            ? "Those courses are already on the schedule."
+            : pins > 0 && added == 0
+                ? $"Added the selected sections to {schedule.Name}."
+                : $"Added {added} courses to {schedule.Name}.");
     }
 
     private static void AcceptDegreeDrag(object sender, DragEventArgs args)

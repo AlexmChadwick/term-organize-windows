@@ -38,9 +38,17 @@ On Windows, the same check is:
 .\artifacts\unpackaged\TermOrganize.App.exe --selftest .\artifacts\selftest
 ```
 
+## MCP server
+
+`src/TermOrganize.Mcp` is a local stdio MCP server (protocol `2025-06-18`) for the bundled catalogs and the degree plans in `UserData.json`. It does not use the network. Tool names, JSON shapes, the plan file location, and the Claude Desktop and Cursor snippets are in [docs/MCP.md](docs/MCP.md).
+
+```bash
+dotnet run --project src/TermOrganize.Mcp/TermOrganize.Mcp.csproj
+```
+
 ## Data
 
-User data is a JSON file at `%LOCALAPPDATA%\TermOrganize\user-data.json`. Settings can export and import it. The bundled catalogs are Fall 2026 (`term-202710`, gzip and the Mac LZFSE `.catalog`) and Spring 2027 (`term-202730.json.gz`). The loader reads gzip before `.catalog`. A fresh launch opens the newest bundled term. A saved term opens again when that snapshot is bundled or already downloaded. New catalogs this port writes are gzip. Live sections come from `nubanner.neu.edu`. Degree requirements are parsed from `catalog.northeastern.edu` HTML.
+User data is a JSON file at `%LOCALAPPDATA%\TermOrganize\UserData.json`. An MSIX install virtualizes that path; see [docs/MCP.md](docs/MCP.md). Settings can export and import it. The bundled catalogs are Fall 2026 (`term-202710`, gzip and the Mac LZFSE `.catalog`) and Spring 2027 (`term-202730.json.gz`). The loader reads gzip before `.catalog`. A fresh launch opens the newest bundled term. A saved term opens again when that snapshot is bundled or already downloaded. New catalogs this port writes are gzip. Live sections come from `nubanner.neu.edu`. Degree requirements are parsed from `catalog.northeastern.edu` HTML.
 
 ## Keyboard
 

@@ -13,6 +13,8 @@ public sealed class Course
     public string Description { get; set; } = "";
     public double MinCredits { get; set; }
     public double MaxCredits { get; set; }
+    /// <summary>Banner's <c>creditHours</c> default. Zero means a bundled catalog did not store one.</summary>
+    public double DefaultCredits { get; set; }
     public List<string> Attributes { get; set; } = [];
     public Requisite? Prereqs { get; set; }
     public Requisite? Coreqs { get; set; }
@@ -22,9 +24,27 @@ public sealed class Course
     public string? Department { get; set; }
     public bool DetailsLoaded { get; set; }
 
+    /// <summary>
+    /// True when the course details were loaded and they list no prerequisites.
+    /// A loaded course omits <see cref="Prereqs"/> when there are none. A course whose
+    /// details were not loaded leaves the property null too, and that is unknown, not none.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasNoPrerequisites => DetailsLoaded && Prereqs?.Simplified() is null;
+
+    /// <summary>
+    /// True when the course details were loaded and they list no corequisites.
+    /// Same split as <see cref="HasNoPrerequisites"/>: omitted on a loaded course means none,
+    /// and null before the details load means unknown.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasNoCorequisites => DetailsLoaded && Coreqs?.Simplified() is null;
+
     [JsonIgnore] public CourseKey Key => new(Subject, Number);
     [JsonIgnore] public string Code => Key.ToString();
     [JsonIgnore] public string CreditsLabel => CreditFormatter.Label(MinCredits, MaxCredits);
+    [JsonIgnore] public bool IsVariableCredit => MaxCredits != MinCredits;
+    [JsonIgnore] public double StartingCredits => VariableCredits.Of(this).Starting;
     [JsonIgnore] public IReadOnlyList<NUPath> Nupaths => NUPathInfo.FromAttributeCodes(Attributes);
 }
 
@@ -144,6 +164,14 @@ public sealed class CourseSection
     public string? Description { get; set; }
     public Requisite? Prereqs { get; set; }
     public Requisite? Coreqs { get; set; }
+    public double? CreditLow { get; set; }
+    public double? CreditHigh { get; set; }
+    public double? CreditHours { get; set; }
+    public string? CreditHourIndicator { get; set; }
+    /// <summary>Null until the restrictions page has been loaded. An empty list is a loaded section with no lists.</summary>
+    public List<SectionRestriction>? Restrictions { get; set; }
+
+    [JsonIgnore] public bool? CpsOnly => SectionRestrictions.CpsOnly(Restrictions);
 
     [JsonIgnore] public string Id => Crn;
     [JsonIgnore] public CourseKey CourseKey => new(Subject, Number);

@@ -30,6 +30,7 @@ public sealed partial class MainWindow : Window
     private int _termGeneration;
     private CatalogIndex? _shownIndex;
     private string? _shownError;
+    private int _shownDataRevision;
     private readonly string _themePath = Path.Combine(Path.GetDirectoryName(UserDataStore.DefaultPath())!, "theme.txt");
     private readonly TextBlock _upNext = new() { Text = "No class on the calendar yet.", TextWrapping = TextWrapping.Wrap };
     private TaskbarIcon? _tray;
@@ -158,6 +159,7 @@ public sealed partial class MainWindow : Window
         _area = tag;
         _shownIndex = App.Session.Index;
         _shownError = App.Session.Error;
+        _shownDataRevision = App.Session.ExternalDataRevision;
         var session = App.Session;
         UIElement page = tag switch
         {
@@ -192,7 +194,7 @@ public sealed partial class MainWindow : Window
             foreach (var term in BundledCatalog.PickerTerms(session.Term, []))
                 TermPicker.Items.Add(new TermChoice(term));
         }
-        if (!ReferenceEquals(_shownIndex, session.Index) || _shownError != session.Error)
+        if (!ReferenceEquals(_shownIndex, session.Index) || _shownError != session.Error || _shownDataRevision != session.ExternalDataRevision)
             Show(_area);
         else
             RefreshUpNext();

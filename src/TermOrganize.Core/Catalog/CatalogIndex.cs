@@ -443,6 +443,7 @@ public sealed class CatalogIndex
         Description = course.Description,
         MinCredits = course.MinCredits,
         MaxCredits = course.MaxCredits,
+        DefaultCredits = course.DefaultCredits,
         Attributes = course.Attributes.ToList(),
         Prereqs = course.Prereqs,
         Coreqs = course.Coreqs,

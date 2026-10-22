@@ -121,6 +121,37 @@ public static class DegreePlanAnalysis
     public static int MissingCount(Requisite requisite, IEnumerable<CourseKey> satisfied, CourseEquivalences? equivalences = null) =>
         Count(requisite, (equivalences ?? CourseEquivalences.None).Expanding(satisfied));
 
+    /// <summary>
+    /// <c>1 course appears more than once in this plan. Each copy still counts.</c>
+    /// Null when nothing repeats.
+    /// </summary>
+    public static string? RepeatHeader(DegreePlan plan)
+    {
+        var count = DuplicateKeys(plan).Count;
+        if (count == 0) return null;
+        return count == 1
+            ? "1 course appears more than once in this plan. Each copy still counts."
+            : $"{count} courses appear more than once in this plan. Each copy still counts.";
+    }
+
+    /// <summary>
+    /// A note shown while adding a number the plan already has. Adding still keeps the new row.
+    /// </summary>
+    public static string? AddRepeatNote(DegreePlan plan, CourseKey key, DegreePlanTerm term)
+    {
+        var stored = plan.Terms.FirstOrDefault(item => item.Id == term.Id) ?? term;
+        if (stored.Courses.Any(course => course.Key == key))
+            return $"Already in {stored.Name}. Adding it again keeps both copies.";
+        if (plan.Completed.Any(course => course.Key == key))
+            return "Already in your completed courses. Each copy still counts.";
+        var other = plan.Terms.FirstOrDefault(item => item.Id != stored.Id && item.Courses.Any(course => course.Key == key));
+        return other is null ? null : $"Already planned in {other.Name}. Each copy still counts.";
+    }
+
+    /// <summary><c>CS 4973 appears more than once. Each copy still counts.</c></summary>
+    public static string RepeatMessage(CourseKey key) =>
+        $"{key} appears more than once. Each copy still counts.";
+
     public static HashSet<CourseKey> DuplicateKeys(DegreePlan plan)
     {
         var planned = plan.Terms.SelectMany(term => term.Courses).ToList();
@@ -134,6 +165,16 @@ public static class DegreePlanAnalysis
                 repeatsPlanned = planned[earlier].Key == key && !CountsSeparately(planned[earlier], course);
             var repeatsCompleted = plan.Completed.Any(done => done.Key == key && !CountsSeparately(done, course));
             if (repeatsPlanned || repeatsCompleted) duplicates.Add(key);
+        }
+        var completed = plan.Completed;
+        for (var index = 0; index < completed.Count; index++)
+        {
+            var course = completed[index];
+            if (course.Key is not CourseKey key) continue;
+            var repeatsEarlier = false;
+            for (var earlier = 0; earlier < index && !repeatsEarlier; earlier++)
+                repeatsEarlier = completed[earlier].Key == key && !CountsSeparately(completed[earlier], course);
+            if (repeatsEarlier) duplicates.Add(key);
         }
         return duplicates;
     }
@@ -211,22 +252,7 @@ public static class DegreePlanAnalysis
         return result;
     }
 
-    /// <summary>Same rule as <c>DegreeCourseRepeats</c>: another topic is not a repeat.</summary>
-    private static bool CountsSeparately(DegreePlanCourse course, DegreePlanCourse other)
-    {
-        if (course.Credits <= 0 || other.Credits <= 0) return false;
-        var first = NormalizedTitle(course.Title);
-        var second = NormalizedTitle(other.Title);
-        if (first.Length > 0 && second.Length > 0 && first != second) return true;
-        return first.Contains("topic", StringComparison.Ordinal) || second.Contains("topic", StringComparison.Ordinal);
-    }
-
-    private static string NormalizedTitle(string title)
-    {
-        var expanded = title.ToLowerInvariant().Replace("&", " and ", StringComparison.Ordinal);
-        var builder = new System.Text.StringBuilder(expanded.Length);
-        foreach (var ch in expanded)
-            if (char.IsLetterOrDigit(ch)) builder.Append(ch);
-        return builder.ToString();
-    }
+    /// <summary>Same rule as <c>DegreeCourseRepeats</c>. A warning does not drop the row from the audit.</summary>
+    private static bool CountsSeparately(DegreePlanCourse course, DegreePlanCourse other) =>
+        DegreeCourseRepeats.CountsSeparately(course, other);
 }

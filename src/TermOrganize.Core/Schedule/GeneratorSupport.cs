@@ -6,18 +6,118 @@ namespace TermOrganize.Core;
 
 public static class ScheduleCourseInputs
 {
-    public static List<ScheduleCourseInput> Inputs(SchedulePlan plan, CatalogIndex index) =>
-        plan.Courses.Select(planCourse =>
+    /// <summary>
+    /// One search slot per plan course. Each manually selected CRN of that course is its own slot,
+    /// so two special-topics sections are not merged into one choice. A pin the catalog no longer
+    /// lists stays locked: that slot is empty and is reported unavailable, rather than opening every section.
+    /// </summary>
+    public static List<ScheduleCourseInput> Inputs(SchedulePlan plan, CatalogIndex index)
+    {
+        var result = new List<ScheduleCourseInput>();
+        var onlyCourse = plan.Courses.Count == 1 ? plan.Courses[0] : null;
+        var copies = plan.Courses.GroupBy(item => item.Key).ToDictionary(group => group.Key, group => group.Count());
+        foreach (var planCourse in plan.Courses)
         {
+            if (copies[planCourse.Key] > 1)
+            {
+                result.Add(OneRow(planCourse, index));
+                continue;
+            }
             var course = index.Course(planCourse.Key);
-            return new ScheduleCourseInput(
-                planCourse.Key,
-                planCourse.IsRequired,
-                index.Sections(planCourse.Key),
-                planCourse.ExcludedCRNs,
-                (int)Math.Ceiling(course?.MinCredits ?? 0),
-                (int)Math.Ceiling(course?.MaxCredits ?? 0));
-        }).ToList();
+            var sections = index.Sections(planCourse.Key);
+            var resolved = new List<string>();
+            foreach (var crn in plan.SelectedCRNs)
+            {
+                var section = index.Section(crn);
+                if (section is null || section.CourseKey != planCourse.Key) continue;
+                if (resolved.Contains(section.Crn)) continue;
+                resolved.Add(section.Crn);
+            }
+            var rowPin = DegreeCourseRepeats.CleanCrn(planCourse.PinnedCrn);
+            var missingPins = new List<string>();
+            if (rowPin is null && resolved.Count == 0 && ReferenceEquals(planCourse, onlyCourse))
+            {
+                missingPins = plan.SelectedCRNs
+                    .Select(DegreeCourseRepeats.CleanCrn)
+                    .Where(crn => crn is not null && index.Section(crn!) is null)
+                    .Cast<string>()
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+            }
+            if (rowPin is not null && !resolved.Contains(rowPin))
+                result.Add(Locked(planCourse, course, rowPin));
+            foreach (var pin in missingPins)
+                result.Add(Locked(planCourse, course, pin));
+            if (resolved.Count > 0)
+            {
+                var first = true;
+                foreach (var pin in resolved)
+                {
+                    var exact = VariableCredits.Exact(course, planCourse.Credits);
+                    result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, pin, course?.IsVariableCredit == true && !first ? 0d : exact));
+                    first = false;
+                }
+                continue;
+            }
+            if (rowPin is not null || missingPins.Count > 0) continue;
+            result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null, VariableCredits.Exact(course, planCourse.Credits)));
+        }
+        return result;
+    }
+
+    /// <summary>One search slot per degree-plan course. A selected CRN locks that slot. Entries are not merged by subject and number.</summary>
+    public static List<ScheduleCourseInput> ForDegreeCourses(IEnumerable<DegreePlanCourse> courses, CatalogIndex index)
+    {
+        var result = new List<ScheduleCourseInput>();
+        foreach (var course in courses)
+        {
+            if (course.Key is not CourseKey key) continue;
+            var listed = index.Course(key);
+            var pin = DegreeCourseRepeats.CleanCrn(course.SelectedCrn);
+            var sections = index.Sections(key);
+            IReadOnlyList<CourseSection> usable = pin is null
+                ? sections
+                : sections.Where(section => string.Equals(section.Crn, pin, StringComparison.Ordinal)).ToList();
+            result.Add(Input(key, true, usable, [], listed, pin, VariableCredits.Exact(listed, course.Credits)));
+        }
+        return result;
+    }
+
+    /// <summary>One slot for one repeated row. Its pin is not shared with the other rows of that course.</summary>
+    private static ScheduleCourseInput OneRow(PlanCourse planCourse, CatalogIndex index)
+    {
+        var course = index.Course(planCourse.Key);
+        var sections = index.Sections(planCourse.Key);
+        var pin = DegreeCourseRepeats.CleanCrn(planCourse.PinnedCrn);
+        if (pin is null)
+            return Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null, VariableCredits.Exact(course, planCourse.Credits));
+        var usable = sections.Where(section => string.Equals(section.Crn, pin, StringComparison.Ordinal)).ToList();
+        return usable.Count == 0
+            ? Locked(planCourse, course, pin)
+            : Input(planCourse.Key, planCourse.IsRequired, usable, planCourse.ExcludedCRNs, course, pin, VariableCredits.Exact(course, planCourse.Credits));
+    }
+
+    private static ScheduleCourseInput Locked(PlanCourse planCourse, Course? course, string pin) =>
+        Input(planCourse.Key, planCourse.IsRequired, [], planCourse.ExcludedCRNs, course, pin, VariableCredits.Exact(course, planCourse.Credits));
+
+    private static ScheduleCourseInput Input(
+        CourseKey key,
+        bool isRequired,
+        IReadOnlyList<CourseSection> sections,
+        IEnumerable<string> excluded,
+        Course? course,
+        string? pinnedCrn,
+        double? exactCredits = null) =>
+        new(
+            key,
+            isRequired,
+            sections,
+            excluded,
+            exactCredits ?? Math.Ceiling(course?.MinCredits ?? 0),
+            exactCredits ?? Math.Ceiling(course?.MaxCredits ?? 0))
+        {
+            PinnedCrn = pinnedCrn,
+        };
 }
 
 public static class GeneratedScheduleFavorites
@@ -171,6 +271,7 @@ public static class ScheduleReorderApplication
         IsRequired = course.IsRequired,
         ExcludedCRNs = new HashSet<string>(course.ExcludedCRNs, StringComparer.Ordinal),
         ColorIndex = course.ColorIndex,
+        PinnedCrn = course.PinnedCrn,
     };
 }
 
@@ -189,6 +290,7 @@ public static class SchedulePlanActions
                 IsRequired = entry.PlanCourse.IsRequired,
                 ExcludedCRNs = new HashSet<string>(entry.PlanCourse.ExcludedCRNs, StringComparer.Ordinal),
                 ColorIndex = entry.PlanCourse.ColorIndex,
+                PinnedCrn = entry.PlanCourse.PinnedCrn,
             },
             plan.Courses.FindIndex(c => c.Key == entry.Key) is var found && found >= 0 ? found : plan.Courses.Count,
             plan.SelectedCRNs.Where(crns.Contains).ToList(),
@@ -220,6 +322,12 @@ public static class SchedulePlanActions
         var added = new List<CourseKey>();
         foreach (var key in suggestion.Courses)
             if (userData.AddCourse(key, planId, required: true)) added.Add(key);
+        if (suggestion.Origin is ScheduleAutofillSuggestion.Source.FromDegreePlan degree)
+        {
+            var term = userData.DegreePlan(degree.PlanId)?.Terms.FirstOrDefault(item => item.Id == degree.TermId);
+            if (term is not null)
+                userData.UpdatePlan(planId, plan => DegreePlanSchedule.CopyPins(plan, term.Courses));
+        }
         return added;
     }
 

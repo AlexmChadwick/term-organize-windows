@@ -35,6 +35,13 @@ public sealed partial class DegreeAudit
         public bool BySubstitution { get; set; }
         public CourseKey? Satisfies { get; set; }
         public int Instance { get; set; }
+        /// <summary>The degree-plan row this entry came from. A substitution names this id, not only the course number.</summary>
+        public Guid RowId { get; set; }
+        /// <summary>Every copy that has credit counts. A zero-credit line is not a second course.</summary>
+        public bool CountsTowardHours { get; set; } = true;
+
+        /// <summary>Manual section, when the plan named one. Distinct CRNs are separate audit entries.</summary>
+        public string? SelectedCrn { get; set; }
 
         public string Id => Instance == 0 ? Key.ToString() : $"{Key} ({Instance + 1})";
         public bool IsCompleted => Semester is null;
@@ -51,6 +58,9 @@ public sealed partial class DegreeAudit
             BySubstitution = BySubstitution,
             Satisfies = Satisfies,
             Instance = Instance,
+            RowId = RowId,
+            CountsTowardHours = CountsTowardHours,
+            SelectedCrn = SelectedCrn,
         };
     }
 
@@ -213,6 +223,25 @@ public sealed partial class DegreeAudit
         return null;
     }
 
+    /// <summary>
+    /// How a semester-hour minimum stands, for the university minimum, the program total,
+    /// and hours in the major. The line is <c>completed of required semester hours</c>,
+    /// then <c> · N planned</c> when planned credits are above zero. The first number
+    /// is credits already earned. It is not completed plus planned.
+    /// Complete when completed meets the requirement, planned when the rest is in a later term,
+    /// partial when some credits count and the sum is still short, and missing when both are zero.
+    /// </summary>
+    public static (Status Status, string Detail) HoursStatus(double completed, double planned, double required)
+    {
+        var status = completed >= required ? Status.Complete
+            : completed + planned >= required ? Status.Planned
+            : completed + planned > 0 ? Status.Partial
+            : Status.Missing;
+        var detail = $"{HoursText(completed)} of {HoursText(required)} semester hours";
+        if (planned > 0) detail += $" \u00b7 {HoursText(planned)} planned";
+        return (status, detail);
+    }
+
     internal static string HoursText(double value)
     {
         var rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
@@ -260,8 +289,32 @@ public static class DegreeCourseRepeats
         return first.Contains("topic", StringComparison.Ordinal) || second.Contains("topic", StringComparison.Ordinal);
     }
 
-    public static bool CountsSeparately(DegreePlanCourse a, DegreePlanCourse b) =>
-        CountsSeparately(a.Title, a.Credits, b.Title, b.Credits);
+    /// <summary>
+    /// Another section counts on its own when both rows name a different CRN, or, when
+    /// neither names a CRN, the titles differ or a title contains "topic". The same CRN
+    /// twice is one course for the warning. Lines without credit never count separately.
+    /// The audit still counts every copy that has credit.
+    /// </summary>
+    public static bool CountsSeparately(DegreePlanCourse a, DegreePlanCourse b)
+    {
+        if (a.Credits <= 0 || b.Credits <= 0) return false;
+        var first = CleanCrn(a.SelectedCrn);
+        var second = CleanCrn(b.SelectedCrn);
+        if (first is not null || second is not null)
+            return first is not null && second is not null && !string.Equals(first, second, StringComparison.Ordinal);
+        return CountsSeparately(a.Title, a.Credits, b.Title, b.Credits);
+    }
+
+    /// <summary>True when both listings name a CRN and the CRNs differ.</summary>
+    public static bool DistinctManualCrns(string? crn, string? other)
+    {
+        var first = CleanCrn(crn);
+        var second = CleanCrn(other);
+        return first is not null && second is not null && !string.Equals(first, second, StringComparison.Ordinal);
+    }
+
+    public static string? CleanCrn(string? crn) =>
+        string.IsNullOrWhiteSpace(crn) ? null : crn.Trim();
 
     private static string NormalizedTitle(string title) =>
         new(title.ToLowerInvariant().Replace("&", " and ", StringComparison.Ordinal).Where(char.IsLetterOrDigit).ToArray());

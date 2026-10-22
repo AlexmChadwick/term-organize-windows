@@ -351,7 +351,7 @@ public sealed class DegreePage : UserControl
             var added = false;
             _session.Store.UpdateDegreePlan(_plan.Id, plan =>
                 added = DegreePlanEditing.Add(new DegreePlanCourse(key, title, credits), choice.Term.Id, plan));
-            if (!added) _window.SetStatus($"{key} is already on this plan. A second listing needs its own CRN.");
+            if (!added) _window.SetStatus($"{key} was not added. That semester is not on this plan.");
             ShowPlan();
         };
         var row = new WrapLayout { Spacing = 8 };

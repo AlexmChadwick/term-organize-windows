@@ -1,0 +1,251 @@
+name: Release
+
+# Tag pushes only. Branch pushes and pull requests stay on windows.yml.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Sign ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            platform: x64
+            rid: win-x64
+          - arch: arm64
+            platform: ARM64
+            rid: win-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Package MSIX
+        run: >
+          dotnet publish src/TermOrganize.App/TermOrganize.App.csproj
+          -c Release
+          -p:Platform=${{ matrix.platform }}
+          -p:RuntimeIdentifier=${{ matrix.rid }}
+          -p:WindowsPackageType=MSIX
+          -p:GenerateAppxPackageOnBuild=true
+          -p:AppxPackageSigningEnabled=false
+          -p:AppxBundle=Never
+          -p:AppxPackageDir=${{ github.workspace }}/artifacts/msix/
+
+      - name: Clean project outputs before the unpackaged publish
+        shell: pwsh
+        run: |
+          git clean -xdf src
+          if (Test-Path .msbuild) { Remove-Item -Recurse -Force .msbuild }
+
+      - name: Publish unpackaged app
+        run: >
+          dotnet publish src/TermOrganize.App/TermOrganize.App.csproj
+          -c Release
+          -p:Platform=${{ matrix.platform }}
+          -p:RuntimeIdentifier=${{ matrix.rid }}
+          -p:SelfContained=true
+          -p:WindowsAppSDKSelfContained=true
+          -p:WindowsAppSdkBootstrapInitialize=false
+          -p:WindowsPackageType=None
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:EnableMsixTooling=true
+          -p:PublishSingleFile=false
+          -p:PublishTrimmed=false
+          -p:PublishReadyToRun=false
+          -p:DisableEmbeddedXbf=false
+          -o artifacts/unpackaged
+
+      - name: Sign and verify
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.WINDOWS_TEST_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_TEST_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:PFX_BASE64) -or [string]::IsNullOrEmpty($env:PFX_PASSWORD)) {
+            throw 'WINDOWS_TEST_PFX_BASE64 and WINDOWS_TEST_PFX_PASSWORD must be set. They are not written into the repo.'
+          }
+          $root = '${{ github.workspace }}'
+          $pfx = Join-Path $env:RUNNER_TEMP 'termorganize-test.pfx'
+          $cer = Join-Path $env:RUNNER_TEMP 'TermOrganize-Test.cer'
+          try {
+            $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String(($env:PFX_BASE64 -replace '\s', '')))
+            $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:PFX_PASSWORD, $flags)
+            if ($cert.Subject -ne 'CN=Term Organize') {
+              throw "Test PFX subject is '$($cert.Subject)'. Expected CN=Term Organize, matching the package publisher."
+            }
+            Export-Certificate -Cert $cert -FilePath $cer -Type CERT | Out-Null
+            Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
+
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+              Where-Object { $_.FullName -match '\\x64\\signtool.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $signtool) { throw 'signtool.exe was not found in the Windows SDK.' }
+
+            $out = Join-Path $root 'artifacts/release'
+            New-Item -ItemType Directory -Force -Path $out | Out-Null
+            $tag = '${{ github.ref_name }}'
+            $arch = '${{ matrix.arch }}'
+
+            function Get-MsixArchitecture([string]$path) {
+              Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+              $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+              try {
+                $entry = $zip.GetEntry('AppxManifest.xml')
+                if (-not $entry) { throw "AppxManifest.xml is missing from $path" }
+                $reader = New-Object System.IO.StreamReader($entry.Open())
+                try { $xml = $reader.ReadToEnd() }
+                finally { $reader.Dispose() }
+              }
+              finally { $zip.Dispose() }
+              if ($xml -notmatch 'ProcessorArchitecture="([^"]+)"') {
+                throw "ProcessorArchitecture is missing from $path"
+              }
+              return $Matches[1]
+            }
+
+            $appPackages = @(Get-ChildItem (Join-Path $root 'artifacts/msix') -Recurse -Filter 'TermOrganize.App_*.msix')
+            if ($appPackages.Count -ne 1) {
+              throw "Expected one TermOrganize.App MSIX, found $($appPackages.Count): $($appPackages.FullName -join ', ')."
+            }
+            $msixName = "TermOrganize-$tag-win-$arch.msix"
+            $signedMsix = Join-Path $out $msixName
+            Copy-Item $appPackages[0].FullName $signedMsix
+
+            # The package folder also contains Microsoft.WindowsAppRuntime.1.8.msix for
+            # x64, arm64, x86, and win32. The MSIX is framework-dependent, so a clean
+            # machine needs the copy for this architecture. Those packages are already
+            # Microsoft-signed; do not sign them again.
+            $runtimePackages = @(Get-ChildItem (Join-Path $root 'artifacts/msix') -Recurse -Filter 'Microsoft.WindowsAppRuntime*.msix')
+            $runtimeMatch = @($runtimePackages | Where-Object { (Get-MsixArchitecture $_.FullName) -eq $arch })
+            if ($runtimeMatch.Count -ne 1) {
+              $described = ($runtimePackages | ForEach-Object { '{0} ({1})' -f $_.FullName, (Get-MsixArchitecture $_.FullName) }) -join ', '
+              throw "Expected one Windows App Runtime MSIX for $arch, found $($runtimeMatch.Count). Candidates: $described"
+            }
+            $runtimeName = '{0}-win-{1}.msix' -f [IO.Path]::GetFileNameWithoutExtension($runtimeMatch[0].Name), $arch
+            $runtimeOut = Join-Path $out $runtimeName
+            Copy-Item $runtimeMatch[0].FullName $runtimeOut
+            & $signtool.FullName @('verify', '/pa', $runtimeOut)
+            if ($LASTEXITCODE -ne 0) { throw "signtool verify failed for the Microsoft-signed runtime $runtimeOut ($LASTEXITCODE)." }
+
+            $exe = Join-Path $root 'artifacts/unpackaged/TermOrganize.App.exe'
+            if (-not (Test-Path -LiteralPath $exe)) { throw "Missing $exe" }
+
+            foreach ($file in @($signedMsix, $exe)) {
+              & $signtool.FullName @(
+                'sign', '/fd', 'SHA256', '/f', $pfx, '/p', $env:PFX_PASSWORD,
+                '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', $file)
+              if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $file ($LASTEXITCODE)." }
+              & $signtool.FullName @('verify', '/pa', $file)
+              if ($LASTEXITCODE -ne 0) { throw "signtool verify failed for $file ($LASTEXITCODE)." }
+            }
+
+            $zip = Join-Path $out "TermOrganize-$tag-win-$arch.zip"
+            Compress-Archive -Path (Join-Path (Join-Path $root 'artifacts/unpackaged') '*') -DestinationPath $zip -Force
+            $leaks = @(Get-ChildItem $out -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.pfx', '.snk' })
+            if ($leaks.Count -gt 0) { throw "Refusing to upload key material: $($leaks.Name -join ', ')" }
+          }
+          finally {
+            Remove-Item -Force -ErrorAction SilentlyContinue $pfx, $cer
+          }
+
+      - name: Upload signed packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: artifacts/release/*
+          if-no-files-found: error
+
+  release:
+    name: Draft GitHub release
+    needs: package
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download signed packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: artifacts/github-release
+
+      - name: Add the test certificate, install script, and checksums
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.WINDOWS_TEST_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_TEST_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:PFX_BASE64) -or [string]::IsNullOrEmpty($env:PFX_PASSWORD)) {
+            throw 'WINDOWS_TEST_PFX_BASE64 and WINDOWS_TEST_PFX_PASSWORD must be set.'
+          }
+          $root = '${{ github.workspace }}'
+          $stage = Join-Path $root 'artifacts/github-release'
+          $pfx = Join-Path $env:RUNNER_TEMP 'termorganize-test.pfx'
+          try {
+            $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String(($env:PFX_BASE64 -replace '\s', '')))
+            $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:PFX_PASSWORD, $flags)
+            if ($cert.Subject -ne 'CN=Term Organize') {
+              throw "Test PFX subject is '$($cert.Subject)'. Expected CN=Term Organize."
+            }
+            Export-Certificate -Cert $cert -FilePath (Join-Path $stage 'TermOrganize-Test.cer') -Type CERT | Out-Null
+          }
+          finally {
+            Remove-Item -Force -ErrorAction SilentlyContinue $pfx
+          }
+          Copy-Item scripts/install-test-cert.ps1 (Join-Path $stage 'install-test-cert.ps1')
+          $leaks = @(Get-ChildItem $stage -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.pfx', '.snk' })
+          if ($leaks.Count -gt 0) { throw "Refusing to attach key material: $($leaks.Name -join ', ')" }
+          $expected = @(
+            'TermOrganize-${{ github.ref_name }}-win-x64.msix',
+            'TermOrganize-${{ github.ref_name }}-win-arm64.msix',
+            'TermOrganize-${{ github.ref_name }}-win-x64.zip',
+            'TermOrganize-${{ github.ref_name }}-win-arm64.zip',
+            'Microsoft.WindowsAppRuntime.1.8-win-x64.msix',
+            'Microsoft.WindowsAppRuntime.1.8-win-arm64.msix'
+          )
+          foreach ($name in $expected) {
+            if (-not (Test-Path -LiteralPath (Join-Path $stage $name))) { throw "Missing signed package $name." }
+          }
+          $sums = Join-Path $stage 'SHA256SUMS'
+          $lines = Get-ChildItem $stage -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            '{0}  {1}' -f $hash, $_.Name
+          }
+          Set-Content -Path $sums -Value $lines -Encoding ascii
+
+      - name: Create the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          fail_on_unmatched_files: true
+          files: artifacts/github-release/*
+          body: |
+            Self-signed test build for download testing. This is not a Microsoft Store release, and the certificate is not a public CA. The package publisher is `CN=Term Organize`, version 1.1.0.0.
+
+            1. Download `TermOrganize-Test.cer`, `install-test-cert.ps1`, `SHA256SUMS`, the app package for your PC (`TermOrganize-<tag>-win-x64.msix` or `win-arm64`), and the matching `Microsoft.WindowsAppRuntime.1.8-win-x64.msix` or `win-arm64`.
+            2. Check the names against `SHA256SUMS`.
+            3. Put the certificate, the script, the runtime package, and the app `.msix` in one folder. Open PowerShell as Administrator and run `.\install-test-cert.ps1`. It imports the certificate into `LocalMachine\TrustedPeople`, installs the Windows App Runtime, then installs the app.
+            4. Or unzip `TermOrganize-<tag>-win-<arch>.zip` and run `TermOrganize.App.exe`. That exe is Authenticode-signed with the same test certificate. Windows may still warn until the certificate is trusted. The zip is self-contained and does not need the runtime package.
+
+            Sideloading or Developer Mode has to be on for the app MSIX. The runtime package is already Microsoft-signed and is not re-signed. The app MSIX is signed with the test certificate.

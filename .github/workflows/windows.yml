@@ -1,7 +1,11 @@
 name: Windows
 
+# Branch pushes and pull requests only. A v* tag is release.yml, so the
+# package job does not run a second time for the same commit.
 on:
   push:
+    branches:
+      - "**"
   pull_request:
   workflow_dispatch:
 

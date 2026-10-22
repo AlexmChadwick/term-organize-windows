@@ -177,7 +177,7 @@ public sealed class DegreeRequirementsLookup
         if (_countedBy.TryGetValue(key, out var counted) && counted.Use.Credits > 0) return counted.Use.Credits;
         if (_choices.TryGetValue(key, out var choice) && choice.Credits > 0) return choice.Credits;
         var banner = _bannerCourse(key);
-        if (banner is not null) return banner.MaxCredits;
+        if (banner is not null) return banner.StartingCredits;
         if (_infoStates.TryGetValue(key, out var state) && state.Info?.MaxCredits is double max) return max;
         return _choices.TryGetValue(key, out choice) ? choice.Credits : null;
     }

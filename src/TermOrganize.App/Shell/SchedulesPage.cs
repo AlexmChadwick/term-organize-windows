@@ -216,6 +216,11 @@ public sealed class SchedulesPage : UserControl
         var index = _session.Index!;
         var title = index.Course(course.Key)?.Title ?? "";
         var panel = new StackPanel { Spacing = 4 };
+        var listed = index.Course(course.Key);
+        if (listed is not null && CpsNotes.ForCourse(index.Sections(course.Key)) is string cps)
+            panel.Children.Add(Chrome.Caption(cps));
+        if (listed is { IsVariableCredit: true })
+            panel.Children.Add(CreditBox(course, listed));
         var header = new Grid { ColumnSpacing = 8 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 80 });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -287,17 +292,65 @@ public sealed class SchedulesPage : UserControl
             line.Children.Add(consider);
             Grid.SetColumn(onCalendar, 1);
             line.Children.Add(onCalendar);
-            var sectionText = new TextBlock
+            var sectionBody = new StackPanel { Spacing = 2 };
+            sectionBody.Children.Add(new TextBlock
             {
                 Text = $"{section.ClassType} {section.SectionNumber} \u00b7 CRN {section.Crn} \u00b7 {section.ScheduleSummary} \u00b7 {section.SeatsLabel}",
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-            };
+            });
+            if (section.CpsOnly == true)
+                sectionBody.Children.Add(Chrome.Caption(CpsNotes.Restricted));
+            var sectionText = sectionBody;
             Grid.SetColumn(sectionText, 2);
             line.Children.Add(sectionText);
             panel.Children.Add(line);
         }
         return panel;
+    }
+
+    private NumberBox CreditBox(PlanCourse course, Course listed)
+    {
+        var span = VariableCredits.Of(listed);
+        var chosen = course.Credits is double current && current > 0 ? span.Clamp(current) : span.Starting;
+        var box = new NumberBox
+        {
+            Header = VariableCredits.Caption(chosen, span),
+            Value = chosen,
+            Minimum = span.Low,
+            Maximum = span.High,
+            SmallChange = 1,
+            LargeChange = 1,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            Width = 180,
+        };
+        var updating = false;
+        box.ValueChanged += (_, args) =>
+        {
+            if (updating || double.IsNaN(args.NewValue) || _plan is null) return;
+            var next = span.Clamp(args.NewValue);
+            updating = true;
+            if (Math.Abs(box.Value - next) > 0.001) box.Value = next;
+            box.Header = VariableCredits.Caption(next, span);
+            updating = false;
+            _session.Store.UpdatePlan(_plan.Id, plan =>
+            {
+                var row = plan.Courses.FirstOrDefault(item => ReferenceEquals(item, course));
+                if (row is not null) row.Credits = next;
+            });
+            if (course.DegreeRowId is not Guid rowId) return;
+            foreach (var degree in _session.Store.DegreePlans.ToList())
+            {
+                if (degree.Terms.SelectMany(term => term.Courses).All(item => item.Id != rowId)) continue;
+                _session.Store.UpdateDegreePlan(degree.Id, plan =>
+                {
+                    var match = plan.Terms.SelectMany(term => term.Courses).FirstOrDefault(item => item.Id == rowId);
+                    if (match is not null) match.Credits = next;
+                });
+                break;
+            }
+        };
+        return box;
     }
 
     public void GenerateForCapture()

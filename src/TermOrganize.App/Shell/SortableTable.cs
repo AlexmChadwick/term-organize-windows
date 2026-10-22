@@ -35,20 +35,27 @@ internal sealed class SortableTable : UserControl
         HorizontalScrollMode = ScrollMode.Enabled,
         VerticalScrollMode = ScrollMode.Disabled,
     };
-    private readonly ScrollViewer _bodyScroll = new()
+    private readonly ListView _list = new()
     {
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        SelectionMode = ListViewSelectionMode.Single,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        VerticalAlignment = VerticalAlignment.Stretch,
+    };
+    private readonly TextBlock _empty = new()
+    {
+        Text = "Nothing to show.",
+        Opacity = 0.7,
+        Margin = new Thickness(8),
+        Visibility = Visibility.Collapsed,
     };
     private readonly Grid _header = new() { Height = 36 };
-    private readonly StackPanel _body = new();
     private IReadOnlyList<Column> _columns = [];
     private List<Row> _rows = [];
     private int _sortColumn = -1;
     private bool _sortDescending;
     private bool _syncingScroll;
-    private Border? _selected;
-    private readonly Dictionary<Border, Brush> _idle = [];
+    private bool _painting;
+    private ScrollViewer? _bodyScroll;
 
     public event Action<object>? RowChosen;
     public event Action<object>? RowOpened;
@@ -58,12 +65,33 @@ internal sealed class SortableTable : UserControl
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        ScrollViewer.SetHorizontalScrollMode(_list, ScrollMode.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(_list, ScrollBarVisibility.Auto);
+        ScrollViewer.SetVerticalScrollBarVisibility(_list, ScrollBarVisibility.Auto);
         _headerScroll.Content = _header;
-        _bodyScroll.Content = _body;
         root.Children.Add(_headerScroll);
-        Grid.SetRow(_bodyScroll, 1);
-        root.Children.Add(_bodyScroll);
+        var body = new Grid();
+        body.Children.Add(_list);
+        body.Children.Add(_empty);
+        Grid.SetRow(body, 1);
+        root.Children.Add(body);
         Content = root;
+        _list.SelectionChanged += (_, _) =>
+        {
+            if (_painting) return;
+            if (_list.SelectedItem is not ListViewItem item) return;
+            _list.ScrollIntoView(item);
+            if (item.Tag is { } tag) RowChosen?.Invoke(tag);
+        };
+        _list.DoubleTapped += (_, args) =>
+        {
+            if (_list.SelectedItem is ListViewItem { Tag: { } tag })
+            {
+                RowOpened?.Invoke(tag);
+                args.Handled = true;
+            }
+        };
+        _list.Loaded += (_, _) => AttachBodyScroll();
         Chrome.ClipToBounds(this);
         ActualThemeChanged += (_, _) =>
         {
@@ -72,13 +100,6 @@ internal sealed class SortableTable : UserControl
                 PaintHeader();
                 PaintRows();
             }
-        };
-        _bodyScroll.ViewChanged += (_, _) =>
-        {
-            if (_syncingScroll) return;
-            _syncingScroll = true;
-            _headerScroll.ChangeView(_bodyScroll.HorizontalOffset, null, null, true);
-            _syncingScroll = false;
         };
         MinHeight = 120;
     }
@@ -148,10 +169,8 @@ internal sealed class SortableTable : UserControl
                 ? _rows.OrderByDescending(row => Key(row, index, numeric))
                 : _rows.OrderBy(row => Key(row, index, numeric));
         }
-        _body.Children.Clear();
-        _selected = null;
-        _idle.Clear();
-        var stripe = false;
+        _painting = true;
+        _list.Items.Clear();
         foreach (var row in ordered)
         {
             var grid = new Grid { Width = _header.Width, MinHeight = 32 };
@@ -165,34 +184,54 @@ internal sealed class SortableTable : UserControl
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(8, 4, 8, 4),
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    TextWrapping = TextWrapping.NoWrap,
+                    TextWrapping = text.Contains('\n') ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                    MaxLines = text.Contains('\n') ? 3 : 1,
                 };
                 Grid.SetColumn(block, i);
                 grid.Children.Add(block);
             }
-            var stripeBrush = stripe
-                ? Themed("SubtleFillColorSecondaryBrush", Color.FromArgb(16, 128, 128, 128))
-                : Themed("SubtleFillColorTransparentBrush", Color.FromArgb(0, 0, 0, 0));
-            stripe = !stripe;
-            var card = new Border
+            _list.Items.Add(new ListViewItem
             {
-                Child = grid,
-                Background = stripeBrush,
+                Content = grid,
                 Tag = row.Tag,
-            };
-            _idle[card] = stripeBrush;
-            var tag = row.Tag;
-            card.Tapped += (_, _) => Choose(card, tag);
-            card.DoubleTapped += (_, args) =>
-            {
-                Choose(card, tag);
-                RowOpened?.Invoke(tag);
-                args.Handled = true;
-            };
-            _body.Children.Add(card);
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(0),
+            });
         }
-        if (_rows.Count == 0)
-            _body.Children.Add(new TextBlock { Text = "Nothing to show.", Opacity = 0.7, Margin = new Thickness(8) });
+        _empty.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _painting = false;
+        AttachBodyScroll();
+    }
+
+    /// <summary>The list's own scroller moves the header. Arrow keys stay inside the list.</summary>
+    private void AttachBodyScroll()
+    {
+        var viewer = FindScrollViewer(_list);
+        if (viewer is null || ReferenceEquals(viewer, _bodyScroll)) return;
+        if (_bodyScroll is not null) _bodyScroll.ViewChanged -= SyncHeader;
+        _bodyScroll = viewer;
+        _bodyScroll.ViewChanged += SyncHeader;
+    }
+
+    private void SyncHeader(object? sender, ScrollViewerViewChangedEventArgs args)
+    {
+        if (_syncingScroll || _bodyScroll is null) return;
+        _syncingScroll = true;
+        _headerScroll.ChangeView(_bodyScroll.HorizontalOffset, null, null, true);
+        _syncingScroll = false;
+    }
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer viewer) return viewer;
+            var nested = FindScrollViewer(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     private static string Key(Row row, int index, bool numeric)
@@ -203,15 +242,6 @@ internal sealed class SortableTable : UserControl
         if (numeric && double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
             return parsed.ToString("0000000000.000", System.Globalization.CultureInfo.InvariantCulture);
         return text;
-    }
-
-    private void Choose(Border card, object tag)
-    {
-        if (_selected is not null && _idle.TryGetValue(_selected, out var idle))
-            _selected.Background = idle;
-        card.Background = Themed("AccentFillColorDefaultBrush", Color.FromArgb(255, 0, 95, 184));
-        _selected = card;
-        RowChosen?.Invoke(tag);
     }
 
     private Brush Themed(string key, Color fallback)

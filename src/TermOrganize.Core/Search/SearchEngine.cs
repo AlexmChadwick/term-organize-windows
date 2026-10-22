@@ -37,6 +37,14 @@ public enum InstructionFilter
     Online,
 }
 
+/// <summary>Undergrad is a course number below 5000. Grad is 5000 and up.</summary>
+public enum CourseDivision
+{
+    All,
+    Undergrad,
+    Grad,
+}
+
 public static class InstructionFilterInfo
 {
     public static string Label(this InstructionFilter filter) => filter switch
@@ -68,6 +76,7 @@ public sealed class SearchFilters
     /// <summary>Keep courses whose loaded details list no corequisites. Unknown details are left out.</summary>
     public bool NoCorequisites { get; set; }
     public InstructionFilter Instruction { get; set; } = InstructionFilter.Any;
+    public CourseDivision Division { get; set; } = CourseDivision.All;
     public DaySet? AllowedDays { get; set; }
     public int? StartsAfter { get; set; }
     public int? EndsBefore { get; set; }
@@ -90,6 +99,7 @@ public sealed class SearchFilters
             if (NoPrerequisites) n++;
             if (NoCorequisites) n++;
             if (Instruction != InstructionFilter.Any) n++;
+            if (Division != CourseDivision.All) n++;
             if (AllowedDays is not null) n++;
             if (StartsAfter is not null || EndsBefore is not null) n++;
             return n;
@@ -116,6 +126,8 @@ public sealed class SearchFilters
         if (MaxCredits is double max && course.MinCredits > max) return false;
         if (NoPrerequisites && !course.HasNoPrerequisites) return false;
         if (NoCorequisites && !course.HasNoCorequisites) return false;
+        if (Division == CourseDivision.Undergrad && course.Key.NumericValue >= 5000) return false;
+        if (Division == CourseDivision.Grad && course.Key.NumericValue < 5000) return false;
         return true;
     }
 

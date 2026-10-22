@@ -50,12 +50,17 @@ public static class ScheduleCourseInputs
                 result.Add(Locked(planCourse, course, pin));
             if (resolved.Count > 0)
             {
+                var first = true;
                 foreach (var pin in resolved)
-                    result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, pin));
+                {
+                    var exact = VariableCredits.Exact(course, planCourse.Credits);
+                    result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, pin, course?.IsVariableCredit == true && !first ? 0d : exact));
+                    first = false;
+                }
                 continue;
             }
             if (rowPin is not null || missingPins.Count > 0) continue;
-            result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null));
+            result.Add(Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null, VariableCredits.Exact(course, planCourse.Credits)));
         }
         return result;
     }
@@ -73,7 +78,7 @@ public static class ScheduleCourseInputs
             IReadOnlyList<CourseSection> usable = pin is null
                 ? sections
                 : sections.Where(section => string.Equals(section.Crn, pin, StringComparison.Ordinal)).ToList();
-            result.Add(Input(key, true, usable, [], listed, pin));
+            result.Add(Input(key, true, usable, [], listed, pin, VariableCredits.Exact(listed, course.Credits)));
         }
         return result;
     }
@@ -85,15 +90,15 @@ public static class ScheduleCourseInputs
         var sections = index.Sections(planCourse.Key);
         var pin = DegreeCourseRepeats.CleanCrn(planCourse.PinnedCrn);
         if (pin is null)
-            return Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null);
+            return Input(planCourse.Key, planCourse.IsRequired, sections, planCourse.ExcludedCRNs, course, null, VariableCredits.Exact(course, planCourse.Credits));
         var usable = sections.Where(section => string.Equals(section.Crn, pin, StringComparison.Ordinal)).ToList();
         return usable.Count == 0
             ? Locked(planCourse, course, pin)
-            : Input(planCourse.Key, planCourse.IsRequired, usable, planCourse.ExcludedCRNs, course, pin);
+            : Input(planCourse.Key, planCourse.IsRequired, usable, planCourse.ExcludedCRNs, course, pin, VariableCredits.Exact(course, planCourse.Credits));
     }
 
     private static ScheduleCourseInput Locked(PlanCourse planCourse, Course? course, string pin) =>
-        Input(planCourse.Key, planCourse.IsRequired, [], planCourse.ExcludedCRNs, course, pin);
+        Input(planCourse.Key, planCourse.IsRequired, [], planCourse.ExcludedCRNs, course, pin, VariableCredits.Exact(course, planCourse.Credits));
 
     private static ScheduleCourseInput Input(
         CourseKey key,
@@ -101,8 +106,15 @@ public static class ScheduleCourseInputs
         IReadOnlyList<CourseSection> sections,
         IEnumerable<string> excluded,
         Course? course,
-        string? pinnedCrn) =>
-        new(key, isRequired, sections, excluded, (int)Math.Ceiling(course?.MinCredits ?? 0), (int)Math.Ceiling(course?.MaxCredits ?? 0))
+        string? pinnedCrn,
+        double? exactCredits = null) =>
+        new(
+            key,
+            isRequired,
+            sections,
+            excluded,
+            exactCredits ?? Math.Ceiling(course?.MinCredits ?? 0),
+            exactCredits ?? Math.Ceiling(course?.MaxCredits ?? 0))
         {
             PinnedCrn = pinnedCrn,
         };

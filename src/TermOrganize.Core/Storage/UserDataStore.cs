@@ -238,13 +238,13 @@ public sealed class UserDataStore
         PlansChanged();
     }
 
-    public bool AddCourse(CourseKey key, Guid planId, bool required = true)
+    public bool AddCourse(CourseKey key, Guid planId, bool required = true, double? credits = null)
     {
         var added = false;
         UpdatePlan(planId, plan =>
         {
             if (plan.Contains(key)) return;
-            plan.Courses.Add(new PlanCourse { Key = key, IsRequired = required, ColorIndex = plan.NextColorIndex });
+            plan.Courses.Add(new PlanCourse { Key = key, IsRequired = required, ColorIndex = plan.NextColorIndex, Credits = credits });
             added = true;
         });
         return added;

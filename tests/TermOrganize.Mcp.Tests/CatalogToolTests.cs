@@ -38,6 +38,30 @@ public sealed class CatalogToolTests
     }
 
     [Fact]
+    public void SearchCanRequireNoPrerequisitesOrCorequisites()
+    {
+        var spring = Library.ByCode["202730"];
+        var withPrereq = spring.Courses.First(course => course.DetailsLoaded && course.Prereqs is not null && course.HasNoCorequisites);
+        var withoutEither = spring.Courses.First(course => course.HasNoPrerequisites && course.HasNoCorequisites);
+        var withCoreq = spring.Courses.First(course => course.DetailsLoaded && course.Coreqs is not null);
+
+        var open = Rows(_tools.search_courses("202730", subject: withoutEither.Subject, number: withoutEither.Number, no_prerequisites: true, no_corequisites: true, limit: 5));
+        Assert.Contains(open, row => (string)row["number"]! == withoutEither.Number);
+
+        var blockedPrereq = Rows(_tools.search_courses("202730", subject: withPrereq.Subject, number: withPrereq.Number, no_prerequisites: true, limit: 5));
+        Assert.DoesNotContain(blockedPrereq, row => (string)row["number"]! == withPrereq.Number);
+
+        var coreqOk = Rows(_tools.search_courses("202730", subject: withPrereq.Subject, number: withPrereq.Number, no_corequisites: true, limit: 5));
+        Assert.Contains(coreqOk, row => (string)row["number"]! == withPrereq.Number);
+
+        var blockedCoreq = Rows(_tools.search_courses("202730", subject: withCoreq.Subject, number: withCoreq.Number, no_corequisites: true, limit: 5));
+        Assert.DoesNotContain(blockedCoreq, row => (string)row["number"]! == withCoreq.Number);
+    }
+
+    static List<Dictionary<string, object?>> Rows(Dictionary<string, object?> result) =>
+        (List<Dictionary<string, object?>>)result["courses"]!;
+
+    [Fact]
     public void ForbiddenInstructorEmailsNeverAppear()
     {
         var seen = 0;

@@ -41,11 +41,17 @@ public sealed class CatalogTools
         [Description("Optional subject code, such as CS.")] string? subject = null,
         [Description("Optional course number, such as 3000.")] string? number = null,
         [Description("Optional attribute code or NUpath short name.")] string? attribute = null,
+        [Description("When true, only courses whose loaded details list no prerequisites. Courses whose prerequisites were not loaded are left out.")] bool? no_prerequisites = null,
+        [Description("When true, only courses whose loaded details list no corequisites. Courses whose corequisites were not loaded are left out.")] bool? no_corequisites = null,
         [Description("Maximum courses to return. Defaults to 25.")] int? limit = null)
     {
         var index = RequireIndex(term);
         var cap = limit is null ? 25 : Math.Clamp(limit.Value, 1, 100);
-        var filters = new SearchFilters();
+        var filters = new SearchFilters
+        {
+            NoPrerequisites = no_prerequisites == true,
+            NoCorequisites = no_corequisites == true,
+        };
         if (!string.IsNullOrWhiteSpace(subject))
             filters.Subjects.Add(subject.Trim().ToUpperInvariant());
         var path = AttributePath(attribute);

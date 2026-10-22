@@ -136,7 +136,9 @@ No arguments.
 
 ### search_courses
 
-`term` (code or label such as `Fall 2026`), optional `query`, `subject`, `number`, `attribute`, `limit` (default 25, max 100).
+`term` (code or label such as `Fall 2026`), optional `query`, `subject`, `number`, `attribute`, `no_prerequisites`, `no_corequisites`, `limit` (default 25, max 100).
+
+`no_prerequisites` and `no_corequisites` are booleans. When true, a course is kept only when its details were loaded and that requisite was omitted. Omitted on a loaded course means none. Null before the details load means unknown, and those courses are left out. A placement test still counts as a prerequisite.
 
 ```json
 {

@@ -1,94 +1,94 @@
 // Copyright (C) 2026 Term Organize contributors.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-using System.Globalization;
-using System.Text;
-
 namespace TermOrganize.Core;
 
+/// <summary>
+/// Writes chosen sections as .ics text. Events are built here, then written by
+/// <see cref="ScheduleExporter.IcsString"/> so both export paths share one writer
+/// (VTIMEZONE, final exams, UNTIL value types, 75-octet folding).
+/// </summary>
 public static class IcsWriter
 {
-    public static string Write(string calendarName, Term term, IEnumerable<CourseSection> sections)
+    public static string Write(string calendarName, Term term, IEnumerable<CourseSection> sections, DateTimeOffset? now = null)
     {
-        var (start, end) = TermCalendar.Window(term);
-        var builder = new StringBuilder();
-        void Line(string text) => AppendFolded(builder, text);
-        Line("BEGIN:VCALENDAR");
-        Line("VERSION:2.0");
-        Line("PRODID:-//Term Organize//Schedule//EN");
-        Line("CALSCALE:GREGORIAN");
-        Line("X-WR-CALNAME:" + Escape(calendarName));
-        Line("X-WR-TIMEZONE:America/New_York");
+        var (windowStart, windowEnd) = TermCalendar.Window(term);
+        var events = new List<ScheduleExportEvent>();
         foreach (var section in sections)
         {
+            var code = section.CourseKey.ToString();
+            var notes = new List<string>
+            {
+                section.Title,
+                $"CRN {section.Crn} · {ScheduleFormat.SectionTitle(section)}",
+            };
+            if (ScheduleFormat.Instructors(section) is { } instructors) notes.Add("Instructor: " + instructors);
+            notes.Add("Added from Term Organize");
+
+            var number = 0;
             foreach (var meeting in section.WeeklyMeetings)
             {
-                if (meeting.Start is not int startMin || meeting.End is not int endMin) continue;
-                var first = FirstDate(start, meeting.Days);
-                if (first is null) continue;
-                // RFC 5545: when DTSTART carries a TZID, UNTIL is UTC and ends with Z.
-                var until = UntilUtc(end);
-                Line("BEGIN:VEVENT");
-                Line("UID:" + section.Crn + "-" + meeting.Days.Raw + "-" + startMin + "@termorganize");
-                Line("SUMMARY:" + Escape($"{section.CourseKey} {section.Title}"));
-                Line("LOCATION:" + Escape(meeting.LongLocationLabel));
-                Line("DESCRIPTION:" + Escape($"CRN {section.Crn} · {section.ClassType} · {section.InstructorLabel}"));
-                Line("DTSTART;TZID=America/New_York:" + Stamp(first.Value, startMin));
-                Line("DTEND;TZID=America/New_York:" + Stamp(first.Value, endMin));
-                Line("RRULE:FREQ=WEEKLY;BYDAY=" + ByDay(meeting.Days) + ";UNTIL=" + until);
-                Line("END:VEVENT");
+                var index = number++;
+                if (meeting.Start is not int start || meeting.End is not int end) continue;
+                var startDay = DayOf(meeting.StartDate) ?? windowStart;
+                var endDay = DayOf(meeting.EndDate) ?? windowEnd;
+                var weekdays = meeting.Days.Indices.ToList();
+                if (FirstDate(startDay, weekdays) is not { } first || first > endDay) continue;
+                events.Add(new ScheduleExportEvent
+                {
+                    Uid = $"{section.Crn}-{index}@termorganize",
+                    Title = $"{code} {section.ClassType}",
+                    Location = LocationOf(meeting, section),
+                    Notes = string.Join('\n', notes),
+                    FirstDate = first,
+                    StartMinute = start,
+                    EndMinute = end,
+                    Weekdays = weekdays,
+                    LastDate = endDay,
+                });
             }
-        }
-        Line("END:VCALENDAR");
-        return builder.ToString().Replace("\n", "\r\n", StringComparison.Ordinal);
-    }
 
-    /// <summary>Folds at 75 octets. The newline is a bare LF so the final CRLF pass does not double the CR.</summary>
-    private static void AppendFolded(StringBuilder builder, string text)
-    {
-        var column = 0;
-        foreach (var rune in text.EnumerateRunes())
-        {
-            var size = rune.Utf8SequenceLength;
-            if (column > 0 && column + size > 75)
+            if (section.FinalExam is Meeting exam && DayOf(exam.StartDate) is { } examDay)
             {
-                builder.Append('\n').Append(' ');
-                column = 1;
+                var timed = exam.Start is not null && exam.End is not null;
+                events.Add(new ScheduleExportEvent
+                {
+                    Uid = $"{section.Crn}-final@termorganize",
+                    Title = $"{code} Final Exam",
+                    Location = LocationOf(exam, section),
+                    Notes = string.Join('\n', new[] { "Final exam" }.Concat(notes)),
+                    FirstDate = examDay,
+                    StartMinute = timed ? exam.Start : null,
+                    EndMinute = timed ? exam.End : null,
+                    IsFinalExam = true,
+                });
             }
-            builder.Append(rune.ToString());
-            column += size;
         }
-        builder.Append('\n');
+        return ScheduleExporter.IcsString(events, calendarName, now);
     }
 
-    /// <summary>23:59:59 America/New_York on the last day of the term, written as UTC.</summary>
-    private static string UntilUtc(DateOnly end)
+    private static DateOnly? DayOf(string? iso)
     {
-        var local = new DateTime(end.Year, end.Month, end.Day, 23, 59, 59, DateTimeKind.Unspecified);
-        var utc = TimeZoneInfo.ConvertTimeToUtc(local, TermCalendar.NewYork);
-        return utc.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        if (!ScheduleDates.TryComponents(iso, out var year, out var month, out var day)) return null;
+        try { return new DateOnly(year, month, day); }
+        catch (ArgumentOutOfRangeException) { return null; }
     }
 
-    private static DateOnly? FirstDate(DateOnly start, DaySet days)
+    private static DateOnly? FirstDate(DateOnly start, IReadOnlyList<int> weekdays)
     {
+        if (weekdays.Count == 0) return null;
         for (var i = 0; i < 7; i++)
         {
             var day = start.AddDays(i);
-            if (days.Contains((int)day.DayOfWeek)) return day;
+            if (weekdays.Contains((int)day.DayOfWeek)) return day;
         }
         return null;
     }
 
-    private static string ByDay(DaySet days)
+    private static string? LocationOf(Meeting meeting, CourseSection section)
     {
-        string[] names = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
-        return string.Join(',', days.Indices.Select(i => names[i]));
+        if (meeting.IsOnline || section.IsOnline) return "Online";
+        var label = meeting.LongLocationLabel;
+        return label == "Location TBA" ? null : label;
     }
-
-    private static string Stamp(DateOnly day, int minutes) =>
-        $"{day:yyyyMMdd}T{(minutes / 60):00}{(minutes % 60):00}00";
-
-    private static string Escape(string text) =>
-        text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace(";", "\\;", StringComparison.Ordinal)
-            .Replace(",", "\\,", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
 }

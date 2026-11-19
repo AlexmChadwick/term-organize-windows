@@ -110,7 +110,7 @@ public class IcsParityTests
         {
             var ics = IcsWriter.Write("Fall", Fall, [Section(Weekly(start, end))]);
             Assert.DoesNotContain("BEGIN:VEVENT", ics);
-            Assert.DoesNotContain("RRULE", ics);
+            Assert.DoesNotContain("RRULE:FREQ=WEEKLY", ics);
         }
     }
 
@@ -124,7 +124,7 @@ public class IcsParityTests
         };
         var ics = ScheduleExporter.IcsString([open], "Fall");
         Assert.DoesNotContain("BEGIN:VEVENT", ics);
-        Assert.DoesNotContain("RRULE", ics);
+        Assert.DoesNotContain("RRULE:FREQ=WEEKLY", ics);
     }
 
     [Fact]

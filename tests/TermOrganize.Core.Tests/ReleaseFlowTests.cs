@@ -27,6 +27,8 @@ public class ReleaseFlowTests
                     End = 11 * 60 + 5,
                     BuildingCode = "WVH",
                     Room = "210",
+                    StartDate = "2026-09-02",
+                    EndDate = "2026-12-23",
                 },
             ],
         };

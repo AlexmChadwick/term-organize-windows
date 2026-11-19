@@ -82,7 +82,7 @@ public sealed class SchedulesPage : UserControl
         if (_plan is null || _session.Term is null) return;
         var sections = SelectedSections().ToList();
         var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Sanitize(_plan.Name) + ".ics");
-        File.WriteAllText(path, IcsWriter.Write(_plan.Name, _session.Term, sections));
+        File.WriteAllText(path, IcsWriter.Write(_plan.Name, _session.Term, sections, planId: _plan.Id));
         _window.SetStatus("Wrote " + path);
     }
 

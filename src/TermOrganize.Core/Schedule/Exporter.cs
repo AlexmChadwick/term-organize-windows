@@ -470,6 +470,8 @@ public static partial class ScheduleExporter
         var stamp = UtcStamp((now ?? DateTimeOffset.UtcNow).UtcDateTime);
         foreach (var calendarEvent in events)
         {
+            // A weekly event without an end date would repeat forever; never write one.
+            if (calendarEvent.Weekdays.Count > 0 && calendarEvent.LastDate is null) continue;
             lines.Add("BEGIN:VEVENT");
             lines.Add("UID:" + calendarEvent.Uid);
             lines.Add("DTSTAMP:" + stamp);

@@ -10,9 +10,10 @@ namespace TermOrganize.Core;
 /// </summary>
 public static class IcsWriter
 {
-    public static string Write(string calendarName, Term term, IEnumerable<CourseSection> sections, DateTimeOffset? now = null)
+    public static string Write(string calendarName, Term term, IEnumerable<CourseSection> sections, DateTimeOffset? now = null, Guid? planId = null)
     {
-        var (windowStart, windowEnd) = TermCalendar.Window(term);
+        // CRNs repeat across terms, so UIDs lead with the plan id (or the Banner term code) like the Swift export.
+        var scope = planId?.ToString("D") ?? term.Code;
         var events = new List<ScheduleExportEvent>();
         foreach (var section in sections)
         {
@@ -30,13 +31,13 @@ public static class IcsWriter
             {
                 var index = number++;
                 if (meeting.Start is not int start || meeting.End is not int end) continue;
-                var startDay = DayOf(meeting.StartDate) ?? windowStart;
-                var endDay = DayOf(meeting.EndDate) ?? windowEnd;
+                // No known end date: skip rather than emit an unbounded weekly rule.
+                if (DayOf(meeting.StartDate) is not { } startDay || DayOf(meeting.EndDate) is not { } endDay) continue;
                 var weekdays = meeting.Days.Indices.ToList();
                 if (FirstDate(startDay, weekdays) is not { } first || first > endDay) continue;
                 events.Add(new ScheduleExportEvent
                 {
-                    Uid = $"{section.Crn}-{index}@termorganize",
+                    Uid = $"{scope}-{section.Crn}-{index}@termorganize",
                     Title = $"{code} {section.ClassType}",
                     Location = LocationOf(meeting, section),
                     Notes = string.Join('\n', notes),
@@ -53,7 +54,7 @@ public static class IcsWriter
                 var timed = exam.Start is not null && exam.End is not null;
                 events.Add(new ScheduleExportEvent
                 {
-                    Uid = $"{section.Crn}-final@termorganize",
+                    Uid = $"{scope}-{section.Crn}-final@termorganize",
                     Title = $"{code} Final Exam",
                     Location = LocationOf(exam, section),
                     Notes = string.Join('\n', new[] { "Final exam" }.Concat(notes)),

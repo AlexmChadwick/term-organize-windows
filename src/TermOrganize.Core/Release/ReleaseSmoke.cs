@@ -181,8 +181,8 @@ public static class ReleaseSmoke
             survey.Preferences);
         step($"survey {survey.ChangedCount} schedules {surveyed.Schedules.Count}");
 
-        var weekly = courseSections.FirstOrDefault(section => section.WeeklyMeetings.Any(meeting => meeting.Start is int && meeting.End is int))
-            ?? index.Catalog.Sections.FirstOrDefault(section => section.WeeklyMeetings.Any(meeting => meeting.Start is int && meeting.End is int));
+        var weekly = courseSections.FirstOrDefault(section => section.WeeklyMeetings.Any(meeting => meeting.Start is int && meeting.End is int && meeting.StartDate is not null && meeting.EndDate is not null))
+            ?? index.Catalog.Sections.FirstOrDefault(section => section.WeeklyMeetings.Any(meeting => meeting.Start is int && meeting.End is int && meeting.StartDate is not null && meeting.EndDate is not null));
         if (weekly is not CourseSection meetingSection)
             throw new InvalidOperationException("no weekly meeting to export");
         var ics = IcsWriter.Write(courseKey.ToString(), term, [meetingSection]);

@@ -77,4 +77,60 @@ public class IcsParityTests
         var unfolded = ics.Replace("\r\n ", "", StringComparison.Ordinal);
         Assert.Contains(section.Title, unfolded.Replace("\\,", ",", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void EveryEventHasUtcDtstamp()
+    {
+        var exam = new Meeting { Kind = "Final Exam", StartDate = "2026-12-10" };
+        var now = new DateTimeOffset(2026, 11, 19, 15, 30, 0, TimeSpan.FromHours(-5));
+        var ics = IcsWriter.Write("Fall", Fall, [Section(Weekly("2026-09-02", "2026-12-04"), exam)], now);
+        var stamps = Lines(ics).Where(l => l.StartsWith("DTSTAMP:", StringComparison.Ordinal)).ToList();
+        Assert.Equal(2, stamps.Count);
+        Assert.All(stamps, l => Assert.Equal("DTSTAMP:20261119T203000Z", l));
+    }
+
+    [Fact]
+    public void UidsAreScopedByTermOrPlanAndIndexed()
+    {
+        var exam = new Meeting { Kind = "Final Exam", StartDate = "2026-12-10" };
+        var section = Section(Weekly("2026-09-02", "2026-12-04"), Weekly("2026-09-02", "2026-12-04"), exam);
+        var uids = Lines(IcsWriter.Write("Fall", Fall, [section])).Where(l => l.StartsWith("UID:", StringComparison.Ordinal)).ToList();
+        Assert.Equal(["UID:202710-12345-0@termorganize", "UID:202710-12345-1@termorganize", "UID:202710-12345-final@termorganize"], uids);
+        var spring = new Term("202730", "Spring 2027 Semester");
+        var other = Lines(IcsWriter.Write("Spring", spring, [section])).Where(l => l.StartsWith("UID:", StringComparison.Ordinal));
+        Assert.Empty(uids.Intersect(other));
+        var plan = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        Assert.Contains($"UID:{plan:D}-12345-0@termorganize", IcsWriter.Write("Fall", Fall, [section], planId: plan));
+    }
+
+    [Fact]
+    public void WeeklyMeetingWithoutKnownDatesIsSkipped()
+    {
+        foreach (var (start, end) in new (string?, string?)[] { ("2026-09-02", null), (null, "2026-12-04"), (null, null) })
+        {
+            var ics = IcsWriter.Write("Fall", Fall, [Section(Weekly(start, end))]);
+            Assert.DoesNotContain("BEGIN:VEVENT", ics);
+            Assert.DoesNotContain("RRULE", ics);
+        }
+    }
+
+    [Fact]
+    public void RecurringEventWithoutLastDateIsNeverWritten()
+    {
+        var open = new ScheduleExportEvent
+        {
+            Uid = "x", Title = "t", Notes = "n", FirstDate = new DateOnly(2026, 9, 2),
+            StartMinute = 600, EndMinute = 660, Weekdays = [1, 3],
+        };
+        var ics = ScheduleExporter.IcsString([open], "Fall");
+        Assert.DoesNotContain("BEGIN:VEVENT", ics);
+        Assert.DoesNotContain("RRULE", ics);
+    }
+
+    [Fact]
+    public void UntilIsUtcDateTimeForTimedDtstart()
+    {
+        var ics = IcsWriter.Write("Fall", Fall, [Section(Weekly("2026-09-02", "2026-12-04"))]);
+        Assert.Matches(@"RRULE:FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=\d{8}T\d{6}Z", ics);
+    }
 }

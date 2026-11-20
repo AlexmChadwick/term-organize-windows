@@ -507,12 +507,16 @@ public static partial class ScheduleExporter
     {
         var (events, _) = Events(plan, index);
         if (events.Count == 0) throw ScheduleExportException.NothingToExport;
-        var name = $"{plan.Name} \u2013 {index.Term.Name}";
+        var name = CalendarName(plan.Name, index.Term.Name);
         var text = IcsString(events, name);
         var path = Path.Combine(Path.GetTempPath(), FileName(name, "ics"));
         File.WriteAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return path;
     }
+
+    /// <summary><c>Plan - Term</c> with a plain hyphen, or the term alone when the plan name is blank.</summary>
+    public static string CalendarName(string? planName, string termName) =>
+        string.IsNullOrWhiteSpace(planName) ? termName : $"{planName} - {termName}";
 
     public static string FileName(string name, string extension)
     {

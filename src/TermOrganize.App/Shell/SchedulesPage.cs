@@ -81,7 +81,7 @@ public sealed class SchedulesPage : UserControl
     public void ExportIcs()
     {
         if (_plan is null || _session.Term is null) return;
-        var calendarName = $"{_plan.Name} \u2013 {_session.Term.Name}";
+        var calendarName = ScheduleExporter.CalendarName(_plan.Name, _session.Term.Name);
         string text;
         if (_session.Index is not null)
         {

@@ -361,13 +361,13 @@ public sealed class BannerClient : IDisposable
         BannerParsers.SubjectLookup subjects,
         CancellationToken cancellationToken = default)
     {
-        var descriptionTask = FetchDescriptionHtmlAsync(term, crn, cancellationToken);
+        var descriptionTask = FetchOptionalDescriptionAsync();
         var prereqTask = FetchPrerequisitesHtmlAsync(term, crn, cancellationToken);
         var coreqTask = FetchCorequisitesHtmlAsync(term, crn, cancellationToken);
         var detailsTask = FetchCatalogDetailsHtmlAsync(term, crn, cancellationToken);
         await Task.WhenAll(descriptionTask, prereqTask, coreqTask, detailsTask).ConfigureAwait(false);
         var updated = Copy(course);
-        updated.Description = BannerParsers.Description(descriptionTask.Result);
+        updated.Description = descriptionTask.Result;
         updated.Prereqs = BannerParsers.Prerequisites(prereqTask.Result, subjects);
         updated.Coreqs = BannerParsers.Corequisites(coreqTask.Result, subjects);
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);
@@ -376,6 +376,18 @@ public sealed class BannerClient : IDisposable
         updated.Department = details.Department ?? updated.Department;
         updated.DetailsLoaded = true;
         return updated;
+
+        async Task<string?> FetchOptionalDescriptionAsync()
+        {
+            try
+            {
+                return BannerParsers.Description(await FetchDescriptionHtmlAsync(term, crn, cancellationToken).ConfigureAwait(false));
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
     }
 
     /// <summary>Whether the term's course catalog lists the course. The typeahead matches by prefix, so the code is compared exactly.</summary>

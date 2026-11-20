@@ -163,6 +163,20 @@ public class EmailPrivacyAndCourseInfoTests
     }
 
     [Fact]
+    public async Task SectionDetailsKeepTitleAndRequisitesWhenOnlyTheDescriptionFails()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title" };
+        var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
+
+        Assert.True(updated.DetailsLoaded);
+        Assert.Equal("Algorithms and Data", updated.Title);
+        Assert.Equal(Requisite.Course(new CourseKey("CS", "2510")), updated.Prereqs);
+        Assert.Equal(Requisite.Course(new CourseKey("CS", "3001")), updated.Coreqs);
+        Assert.Null(updated.Description);
+    }
+
+    [Fact]
     public async Task CourseInfoLookupKeepsTitleAndRequisitesWhenOnlyTheDescriptionFails()
     {
         using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
@@ -292,7 +306,8 @@ public class EmailPrivacyAndCourseInfoTests
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("getCourseDescription", StringComparison.Ordinal))
                 return Task.FromResult(Reply(descriptionStatus, "<section>Design and analysis of algorithms.</section>"));
-            if (path.EndsWith("getPrerequisites", StringComparison.Ordinal))
+            if (path.EndsWith("/getPrerequisites", StringComparison.Ordinal)
+                || path.EndsWith("/getSectionPrerequisites", StringComparison.Ordinal))
                 return Task.FromResult(Reply(prerequisitesStatus,
                     "<section><table class=\"basePreqTable\"><thead><tr><th>And/Or</th></tr></thead><tbody>"
                     + "<tr><td></td><td></td><td></td><td></td><td>Computer Science</td><td>2510</td><td>Undergraduate</td><td>D-</td><td></td></tr>"
@@ -303,7 +318,8 @@ public class EmailPrivacyAndCourseInfoTests
                     + "<tr><td>Computer Science</td><td>3001</td><td>Recitation</td></tr></tbody></table></section>"));
             if (path.EndsWith("getCourseMutuallyExclusions", StringComparison.Ordinal))
                 return Task.FromResult(Reply(HttpStatusCode.OK, "<section>No Mutual Exclusion information available.</section>"));
-            if (path.EndsWith("getCourseCatalogDetails", StringComparison.Ordinal))
+            if (path.EndsWith("/getCourseCatalogDetails", StringComparison.Ordinal)
+                || path.EndsWith("/getSectionCatalogDetails", StringComparison.Ordinal))
                 return Task.FromResult(Reply(HttpStatusCode.OK,
                     "<section><span class=\"status-bold\">Title:</span>Algorithms and Data<br/>"
                     + "<span class=\"status-bold\">Credit Hours:</span> 4.000<br/></section>"));

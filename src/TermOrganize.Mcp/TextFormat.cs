@@ -14,9 +14,7 @@ public static partial class TextFormat
         @"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
         RegexOptions.Compiled);
 
-    public static bool IsAllowedEmailDomain(string domain) =>
-        domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase)
-        || domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase);
+    public static bool IsAllowedEmailDomain(string domain) => InstructorEmail.IsAllowedDomain(domain);
 
     /// <summary>Drops any address whose domain is not exactly northeastern.edu or neu.edu.</summary>
     public static string Sanitize(string? text)

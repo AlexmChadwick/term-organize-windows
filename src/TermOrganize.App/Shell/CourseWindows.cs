@@ -14,8 +14,16 @@ internal static class CourseDetail
 {
     private static readonly HashSet<string> Busy = new(StringComparer.Ordinal);
 
+    // The course each host was last asked to show. A slow Banner lookup checks this
+    // before it writes, so fast navigation never shows the wrong course.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Grid, System.Runtime.CompilerServices.StrongBox<CourseKey>> Showing = new();
+
+    private static bool IsShowing(Grid host, CourseKey key) =>
+        Showing.TryGetValue(host, out var box) && box.Value == key;
+
     public static void Show(Grid host, AppSession session, CourseKey key, bool inWindow, bool allowLiveRefresh = true)
     {
+        Showing.AddOrUpdate(host, new System.Runtime.CompilerServices.StrongBox<CourseKey>(key));
         var index = session.Index;
         if (index is null)
         {
@@ -205,6 +213,7 @@ internal static class CourseDetail
     private static async Task FillDetailsAsync(AppSession session, Course course, string term, string? crn)
     {
         if (session.Index is null) return;
+        var changed = false;
         if ((!course.DetailsLoaded || string.IsNullOrWhiteSpace(course.Description)) && crn is not null)
         {
             var detailed = await BannerClient.Shared.FetchCourseDetailsAsync(
@@ -213,16 +222,21 @@ internal static class CourseDetail
                 course,
                 new BannerParsers.SubjectLookup(session.Index.Catalog.Subjects));
             CatalogBuilder.ApplyCourseDetails(course, detailed);
+            changed = true;
         }
         var sections = session.Index.Sections(course.Key);
         if (course.SpecialTopics)
         {
+            var first = true;
             foreach (var section in sections.Where(s => string.IsNullOrWhiteSpace(s.Description)))
             {
+                if (!first) await Task.Delay(150);
+                first = false;
                 try
                 {
                     var html = await BannerClient.Shared.FetchDescriptionHtmlAsync(term, section.Crn);
                     section.Description = BannerParsers.Description(html).NilIfBlank();
+                    changed = true;
                 }
                 catch (Exception) { }
             }
@@ -230,17 +244,23 @@ internal static class CourseDetail
         var missingInstructors = sections.Where(s => s.Instructors is null).ToList();
         if (missingInstructors.Count > 0)
         {
+            var first = true;
             foreach (var section in missingInstructors)
             {
+                if (!first) await Task.Delay(150);
+                first = false;
                 try
                 {
                     var instructors = await BannerClient.Shared.FetchInstructorsAsync(term, section.Crn);
+                    foreach (var instructor in instructors) instructor.Email = InstructorEmail.Institutional(instructor.Email);
                     section.Instructors = instructors;
+                    changed = true;
                 }
                 catch (Exception) { }
             }
         }
-        await FillRestrictionsAsync(session, course.Key, term);
+        if (await FillRestrictionsAsync(session, course.Key, term)) changed = true;
+        if (!changed) return;
         session.Index.Catalog.RecomputePostreqs();
         try { TermCatalogCache.Save(session.Index.Catalog); } catch (Exception) { }
     }
@@ -282,28 +302,33 @@ internal static class CourseDetail
     private static async Task LoadMissingCourseAsync(Grid host, AppSession session, CourseKey key, CatalogIndex index, bool inWindow)
     {
         var termCode = index.Term.Code;
+        const string NotListed = "Banner\u2019s recent course catalogs don\u2019t list it either, so the course code may have changed.";
         try
         {
             var exists = await BannerClient.Shared.CatalogListsAsync(key, termCode);
+            if (!IsShowing(host, key)) return;
             if (!exists)
             {
-                Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", "Banner\u2019s recent course catalogs don\u2019t list it either, so the course code may have changed.");
+                Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", NotListed);
                 return;
             }
             var info = await BannerClient.Shared.FetchCourseInfoAsync(
                 key,
                 termCode,
                 _ => Task.FromResult(new BannerParsers.SubjectLookup(index.Catalog.Subjects)));
+            if (!IsShowing(host, key)) return;
             if (info is null)
             {
-                Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", "Banner\u2019s recent course catalogs don\u2019t list it either, so the course code may have changed.");
+                Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", NotListed);
                 return;
             }
             ShowMissingCourse(host, session, key, info, index, inWindow);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", "Banner\u2019s course catalog didn\u2019t answer, so the course\u2019s details couldn\u2019t be checked.");
+            if (!IsShowing(host, key)) return;
+            // A failed request says nothing about whether the course is offered.
+            Chrome.Fill(host, $"{key} \u00b7 Couldn\u2019t check {index.Term.Name}", "Banner\u2019s course catalog didn\u2019t answer, so the course\u2019s details couldn\u2019t be checked. Check your connection and open the course again. (" + ex.Message + ")");
         }
     }
 
@@ -381,10 +406,11 @@ internal static class CourseDetail
     }
 
     /// <summary>One restrictions request at a time, with a short pause, so a course with many sections does not hammer Banner.</summary>
-    private static async Task FillRestrictionsAsync(AppSession session, CourseKey key, string term)
+    private static async Task<bool> FillRestrictionsAsync(AppSession session, CourseKey key, string term)
     {
         var sections = session.Index?.Sections(key).Where(section => section.Restrictions is null).ToList();
-        if (sections is null || sections.Count == 0) return;
+        if (sections is null || sections.Count == 0) return false;
+        var filled = false;
         for (var i = 0; i < sections.Count; i++)
         {
             if (i > 0) await Task.Delay(150);
@@ -392,12 +418,14 @@ internal static class CourseDetail
             {
                 var html = await BannerClient.Shared.FetchRestrictionsHtmlAsync(term, sections[i].Crn);
                 sections[i].Restrictions = SectionRestrictions.Parse(html);
+                filled = true;
             }
             catch (Exception)
             {
                 // Leave the section unknown. The caption stays hidden.
             }
         }
+        return filled;
     }
 
     private static Border SectionCard(AppSession session, CourseSection section, string title, string term)

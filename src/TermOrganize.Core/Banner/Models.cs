@@ -108,35 +108,44 @@ public sealed class BannerFaculty
 /// </summary>
 public static class InstructorEmail
 {
+    // Whole-token, ASCII only. Anchored so a malformed string is rejected instead of
+    // being cut down to an address Banner never sent.
     private static readonly Regex AddressRegex = new(
-        @"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
-        RegexOptions.Compiled);
+        @"\A[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9\-]+\.)+[A-Za-z]{2,}\z",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly char[] Separators = [',', ';', '<', '>'];
 
     public static bool IsAllowedDomain(string domain) =>
         domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase) ||
         domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Addresses whose domain is exactly northeastern.edu or neu.edu.
-    /// Banner sometimes puts two addresses in one field, separated by a space.
+    /// True when the whole string is one well-formed ASCII address whose domain is
+    /// exactly northeastern.edu or neu.edu.
+    /// </summary>
+    public static bool IsAllowedAddress(string? address)
+    {
+        if (address is null || !AddressRegex.IsMatch(address)) return false;
+        return IsAllowedDomain(address[(address.IndexOf('@') + 1)..]);
+    }
+
+    /// <summary>
+    /// The canonical filter. Banner sometimes puts two addresses in one field, separated
+    /// by whitespace, commas, or semicolons. Each token must be a whole allowed address;
+    /// anything else is dropped, never trimmed into a different address.
     /// Subdomains (including husky.neu.edu) are not kept.
-    /// Returns null when none remain.
+    /// Returns the kept addresses joined by a space, or null when none remain.
     /// </summary>
     public static string? Institutional(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
-        var matches = AddressRegex.Matches(raw);
-        if (matches.Count == 0) return null;
         var kept = new List<string>();
-        foreach (Match match in matches)
+        foreach (var chunk in raw.Split(Separators))
         {
-            var address = match.Value;
-            var at = address.LastIndexOf('@');
-            if (at <= 0) continue;
-            var domain = address[(at + 1)..].TrimEnd('.').ToLowerInvariant();
-            if (IsAllowedDomain(domain))
+            foreach (var token in chunk.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
             {
-                kept.Add(address);
+                if (IsAllowedAddress(token)) kept.Add(token);
             }
         }
         return kept.Count > 0 ? string.Join(" ", kept) : null;

@@ -80,15 +80,23 @@ public sealed class BannerClient : IDisposable
     private readonly TimeSpan _attemptTimeout;
 
     public BannerClient(TimeSpan? timeout = null, int maxAttempts = 4)
+        : this(
+            new SocketsHttpHandler
+            {
+                UseCookies = false,
+                AutomaticDecompression = DecompressionMethods.All,
+                MaxConnectionsPerServer = 8,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            },
+            timeout,
+            maxAttempts)
+    {
+    }
+
+    /// <summary>A client over a caller-supplied handler, so tests can answer requests without a network.</summary>
+    public BannerClient(HttpMessageHandler handler, TimeSpan? timeout = null, int maxAttempts = 4)
     {
         var requestTimeout = timeout ?? TimeSpan.FromSeconds(60);
-        var handler = new SocketsHttpHandler
-        {
-            UseCookies = false,
-            AutomaticDecompression = DecompressionMethods.All,
-            MaxConnectionsPerServer = 8,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-        };
         _http = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = requestTimeout * 4,
@@ -427,12 +435,23 @@ public sealed class BannerClient : IDisposable
         var exclusionsTask = FetchCourseMutualExclusionsHtmlAsync(term, course, cancellationToken);
         var descriptionTask = FetchCourseDescriptionHtmlAsync(term, course, cancellationToken);
         var lookupTask = subjects(cancellationToken);
-        await Task.WhenAll(detailsTask, prerequisitesTask, corequisitesTask, exclusionsTask, descriptionTask, lookupTask).ConfigureAwait(false);
+        // The description runs in parallel but is optional: its failure leaves it null
+        // and must not drop the title and requisites.
+        try
+        {
+            await Task.WhenAll(detailsTask, prerequisitesTask, corequisitesTask, exclusionsTask, lookupTask).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The description request is still running; do not leave it unobserved.
+            _ = descriptionTask.ContinueWith(static t => { _ = t.Exception; }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            throw;
+        }
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);
         var lookup = lookupTask.Result;
         string? description = null;
-        try { description = BannerParsers.Description(descriptionTask.Result).NilIfBlank(); }
-        catch (Exception) { }
+        try { description = BannerParsers.Description(await descriptionTask.ConfigureAwait(false)).NilIfBlank(); }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested) { }
         return new CourseInfo(
             course,
             details.Title ?? "",

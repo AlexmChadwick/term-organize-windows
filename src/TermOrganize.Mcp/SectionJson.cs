@@ -83,13 +83,5 @@ public static class SectionJson
         return rows;
     }
 
-    public static string? AllowedEmail(string? email)
-    {
-        if (string.IsNullOrWhiteSpace(email)) return null;
-        var trimmed = email.Trim();
-        var at = trimmed.LastIndexOf('@');
-        if (at <= 0 || at != trimmed.IndexOf('@') || at == trimmed.Length - 1) return null;
-        var domain = trimmed[(at + 1)..];
-        return TextFormat.IsAllowedEmailDomain(domain) ? trimmed : null;
-    }
+    public static string? AllowedEmail(string? email) => InstructorEmail.Institutional(email);
 }

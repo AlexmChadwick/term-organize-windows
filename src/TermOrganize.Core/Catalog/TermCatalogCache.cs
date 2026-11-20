@@ -19,13 +19,13 @@ public static class TermCatalogCache
     public static TermCatalog? TryLoad(string termCode)
     {
         var path = PathFor(termCode);
-        return File.Exists(path) ? CatalogArchive.Read(path) : null;
+        return File.Exists(path) ? CatalogArchive.SanitizeEmails(CatalogArchive.Read(path)) : null;
     }
 
     public static void Save(TermCatalog catalog)
     {
         Directory.CreateDirectory(Root);
-        CatalogArchive.Write(catalog, PathFor(catalog.Term.Code));
+        CatalogArchive.Write(CatalogArchive.SanitizeEmails(catalog), PathFor(catalog.Term.Code));
     }
 
     /// <summary>

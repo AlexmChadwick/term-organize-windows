@@ -13,12 +13,12 @@ public static class IcsWriter
     /// <summary>
     /// Writes a schedule plan as .ics text using the plan/index event builder (<see cref="ScheduleExporter.Events"/>).
     /// Both this method and the plan exporter use the resolved catalog course title with Swift's fallback,
-    /// and format the calendar name as <c>{plan.Name} – {index.Term.Name}</c>.
+    /// and format the calendar name as <c>{plan.Name} - {index.Term.Name}</c> (the term name alone when the plan name is blank).
     /// </summary>
     public static string Write(SchedulePlan plan, CatalogIndex index, DateTimeOffset? now = null)
     {
         var (events, _) = ScheduleExporter.Events(plan, index);
-        var name = $"{plan.Name} \u2013 {index.Term.Name}";
+        var name = ScheduleExporter.CalendarName(plan.Name, index.Term.Name);
         return ScheduleExporter.IcsString(events, name, now);
     }
 

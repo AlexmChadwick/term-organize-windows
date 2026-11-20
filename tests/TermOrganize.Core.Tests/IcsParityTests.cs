@@ -9,6 +9,27 @@ public class IcsParityTests
 {
     private static readonly Term Fall = new("202710", "Fall 2026 Semester");
 
+    [Fact]
+    public void CalendarNameUsesPlainHyphen()
+    {
+        var name = ScheduleExporter.CalendarName("Primary", "Fall 2026");
+        Assert.Equal("Primary - Fall 2026", name);
+        Assert.DoesNotContain("\u2013", name);
+        Assert.Equal("Primary - Fall 2026.ics", ScheduleExporter.FileName(name, "ics"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(" \t ")]
+    [InlineData(null)]
+    public void BlankPlanNameFallsBackToTermNameAlone(string? planName)
+    {
+        var name = ScheduleExporter.CalendarName(planName, "Fall 2026");
+        Assert.Equal("Fall 2026", name);
+        Assert.Equal("Fall 2026.ics", ScheduleExporter.FileName(name, "ics"));
+    }
+
     private static CourseSection Section(params Meeting[] meetings) => new()
     {
         Crn = "12345",

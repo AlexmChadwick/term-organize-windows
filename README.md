@@ -8,19 +8,27 @@ Term Organize is free software under the GNU Affero General Public License v3.0 
 
 The window follows the Mac app: one window, a sidebar (Search, Subjects, Saved, Professors, Free Rooms, Schedules, Degree Plans, Watchlist), a term picker in the title bar, and the unofficial-status line along the bottom. Light and dark themes use Fluent styling and a Mica backdrop. Closing the window leaves the app in the tray; Exit on the tray menu quits. The tray flyout is Up Next.
 
-All of the course, schedule, and degree logic lives in `src/TermOrganize.Core`, a .NET 9 class library that builds and tests on Linux. The WinUI 3 shell in `src/TermOrganize.App` is what Windows packages. On Linux, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj -p:EnableWindowsTargeting=true -p:Platform=x64` compiles that shell's C# against the Windows App SDK reference assemblies. The XAML compiler does not run on Linux. How each Swift area was carried over is in [PARITY.md](PARITY.md).
+All of the course, schedule, and degree logic lives in `src/TermOrganize.Core`, a .NET 9 class library with tests that run on Linux, macOS, and Windows. The WinUI 3 shell in `src/TermOrganize.App` is what Windows packages. On Linux, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj -p:EnableWindowsTargeting=true -p:Platform=x64` targets the shell's C# only, against the Windows App SDK reference assemblies. The XAML compiler does not run on Linux. How each Swift area was carried over is in [PARITY.md](PARITY.md).
+
+## Platforms and status
+
+- **macOS / iOS (Swift reference):** [AlexmChadwick/Northeastern-Term-Organize](https://github.com/AlexmChadwick/Northeastern-Term-Organize) - Mac app released, and v1.1.3 is the only published release of any platform at [github.com/AlexmChadwick/Northeastern-Term-Organize/releases](https://github.com/AlexmChadwick/Northeastern-Term-Organize/releases). iPhone and iPad builds are sideload only (test builds only, not on the App Store or TestFlight).
+- **Web:** [AlexmChadwick/term-organize-web](https://github.com/AlexmChadwick/term-organize-web) - port in development, no published release and no store listing.
+- **Android:** [AlexmChadwick/term-organize-android](https://github.com/AlexmChadwick/term-organize-android) - port in development, no published release and no store listing.
+- **Linux:** [AlexmChadwick/term-organize-linux](https://github.com/AlexmChadwick/term-organize-linux) - port in development, no published release and no store listing.
+- **Windows:** [AlexmChadwick/term-organize-windows](https://github.com/AlexmChadwick/term-organize-windows) (this repository) - port in development, no published release and no store listing.
 
 ## Install
 
-Term Organize is an early beta. It is unofficial and not affiliated with Northeastern University.
+Windows has no published release yet, so build the app from source. See [Build the app (Windows)](#build-the-app-windows) below for the commands.
 
-Builds are posted on the [Releases page](https://github.com/AlexmChadwick/term-organize-windows/releases) when available. Each release has an MSIX package and a portable zip for x64 and arm64, plus `SHA256SUMS`.
+## Local or test builds
+
+Only for readers who already built or were handed a package, for example from a CI run or a draft release you have access to. Nothing here is published, and no package is on the public Releases page. A package comes as an MSIX and a portable zip for x64 and arm64, plus `SHA256SUMS`.
 
 - **Zip:** unzip `TermOrganize-<tag>-win-<arch>.zip` anywhere and run `TermOrganize.App.exe`.
 - **MSIX:** test builds are signed with a test certificate, not a trusted one. Run the included `install-test-cert.ps1` (or import `TermOrganize-Test.cer` into Trusted People) first, install the matching `Microsoft.WindowsAppRuntime` MSIX, then open the Term Organize MSIX.
 - Windows SmartScreen may warn that the app is unrecognized because it is not signed with a trusted certificate. Choose **More info**, then **Run anyway**.
-
-To build from source, see "Build the app (Windows)" below.
 
 ## Build the logic (Linux, macOS, or Windows)
 
@@ -30,7 +38,7 @@ Requires the .NET 9 SDK.
 dotnet test tests/TermOrganize.Core.Tests/TermOrganize.Core.Tests.csproj
 ```
 
-On a machine that is not Windows, `dotnet build src/TermOrganize.App/TermOrganize.App.csproj` succeeds without compiling the WinUI shell. Add `-p:EnableWindowsTargeting=true -p:Platform=x64` to compile the shell C# against the Windows App SDK references.
+On a machine that is not Windows, add `-p:EnableWindowsTargeting=true -p:Platform=x64` to `dotnet build src/TermOrganize.App/TermOrganize.App.csproj`. This checks the shell's C# only, against the Windows App SDK references. It does not run the XAML compiler and does not produce a runnable app.
 
 ## Build the app (Windows)
 
@@ -42,7 +50,7 @@ dotnet publish src/TermOrganize.App/TermOrganize.App.csproj -c Release -p:Platfo
 
 Run `artifacts\unpackaged\TermOrganize.App.exe`. An unpackaged build registers `termorganize://`, `neuclasssearch://`, and .pdf Open With for the current user.
 
-GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and a self-contained unpackaged zip (`WindowsAppSDKSelfContained=true`). That workflow runs on branch pushes and pull requests, not on `v*` tags. `.github/workflows/release.yml` runs only when a `v*` tag is pushed. It builds x64 and arm64 MSIX packages and self-contained zips, signs the app MSIX and unpackaged exe with the test certificate in repository secrets (`CN=Term Organize`), attaches the matching Microsoft-signed Windows App Runtime package without re-signing it, checks signatures with `signtool verify`, and attaches them to a draft GitHub release. A first test tag is `v1.1.0-rc.1`. The package job waits for `TermOrganize.App.exe --screenshot-sweep` to exit and uploads light and dark PNGs of each page at 1440×900 and 800×900, plus `error.txt` and the sweep log, as the `ui-sweep` artifact even when the capture fails. It then runs `TermOrganize.App.exe --selftest <directory>` against the live Northeastern class search. That process does not open a window. It checks search, course detail, save, schedule generation, the preference survey, an `.ics` export, a degree-plan PDF round trip, free rooms, professors, the watchlist, and settings. The job fails if the process throws, returns a non-zero exit code, or logs an empty result. The log is the `selftest` artifact. The package job runs even when the tests fail. The Windows workflow creates a self-signed `CN=Term Organize` certificate at build time for that CI package. That certificate is not in source control. Trust it before installing the CI MSIX. The release workflow does not mint a certificate; it signs with the test PFX already stored in repository secrets and publishes nothing until the draft is released by hand. The shell C# has been compiled on Linux against those references. The XAML compiler does not run on Linux.
+GitHub Actions (`.github/workflows/windows.yml`) on `windows-latest` runs the core tests and, in a separate job, publishes a signed MSIX and a self-contained unpackaged zip (`WindowsAppSDKSelfContained=true`). That workflow runs on branch pushes and pull requests, not on `v*` tags. `.github/workflows/release.yml` runs only when a `v*` tag is pushed. It builds x64 and arm64 MSIX packages and self-contained zips, signs the app MSIX and unpackaged exe with the test certificate in repository secrets (`CN=Term Organize`), attaches the matching Microsoft-signed Windows App Runtime package without re-signing it, checks signatures with `signtool verify`, and attaches them to a draft GitHub release. A first test tag is `v1.1.0-rc.1`. The package job waits for `TermOrganize.App.exe --screenshot-sweep` to exit and uploads light and dark PNGs of each page at 1440×900 and 800×900, plus `error.txt` and the sweep log, as the `ui-sweep` artifact even when the capture fails. It then runs `TermOrganize.App.exe --selftest <directory>` against the live Northeastern class search. That process does not open a window. It checks search, course detail, save, schedule generation, the preference survey, an `.ics` export, a degree-plan PDF round trip, free rooms, professors, the watchlist, and settings. The job fails if the process throws, returns a non-zero exit code, or logs an empty result. The log is the `selftest` artifact. The package job runs even when the tests fail. The Windows workflow creates a self-signed `CN=Term Organize` certificate at build time for that CI package. That certificate is not in source control. Trust it before installing the CI MSIX. The release workflow does not mint a certificate; it signs with the test PFX already stored in repository secrets and publishes nothing until the draft is released by hand. The Linux command above covers the shell's C# only; the XAML compiler does not run on Linux.
 
 On Windows, the same check is:
 

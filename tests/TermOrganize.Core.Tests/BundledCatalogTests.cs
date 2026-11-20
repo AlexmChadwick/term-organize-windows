@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 using System.IO.Compression;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using TermOrganize.Core;
 
@@ -52,13 +53,11 @@ public class BundledCatalogTests
     [Fact]
     public void EveryShippedCatalogAssetHasOnlyNortheasternEmails()
     {
-        var directory = Path.GetDirectoryName(BundledCatalog.Resolve("term-202710.json.gz"))!;
-        var files = Directory.EnumerateFiles(directory)
-            .Where(file => CatalogArchive.TermCode(file) is not null)
+        // term-202730.catalog is a test fixture that is not copied to the output directory,
+        // so resolve each asset individually instead of listing one directory.
+        var files = new[] { "term-202710.catalog", "term-202710.json.gz", "term-202730.catalog", "term-202730.json.gz" }
+            .Select(name => BundledCatalog.Resolve(name) ?? throw new Xunit.Sdk.XunitException($"Missing bundled catalog asset {name}"))
             .ToList();
-        Assert.Contains(files, file => file.EndsWith("term-202710.catalog", StringComparison.Ordinal));
-        Assert.Contains(files, file => file.EndsWith("term-202710.json.gz", StringComparison.Ordinal));
-        Assert.Contains(files, file => file.EndsWith("term-202730.json.gz", StringComparison.Ordinal));
         foreach (var file in files)
         {
             var bytes = File.ReadAllBytes(file);
@@ -79,15 +78,45 @@ public class BundledCatalogTests
 
     private static void AssertOnlyNortheasternDomains(byte[] json)
     {
-        var text = System.Text.Encoding.UTF8.GetString(json);
-        var addresses = Regex.Matches(text, @"[^\s""@]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)");
+        var addresses = AddressTokens(json);
         Assert.NotEmpty(addresses);
-        foreach (Match address in addresses)
+        Assert.All(addresses, address => Assert.True(InstructorEmail.IsAllowedAddress(address), address));
+    }
+
+    private static List<string> AddressTokens(byte[] json)
+    {
+        var addresses = new List<string>();
+        var reader = new Utf8JsonReader(json);
+        while (reader.Read())
         {
-            var domain = address.Groups[1].Value;
-            Assert.True(domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase)
-                || domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase), address.Value);
+            if (reader.TokenType is not (JsonTokenType.String or JsonTokenType.PropertyName)) continue;
+            if (!reader.ValueIsEscaped && !reader.ValueSpan.Contains((byte)'@')) continue;
+            var value = reader.GetString()!;
+            foreach (Match token in Regex.Matches(value, @"[^\s,;<>]*@[^\s,;<>]*"))
+            {
+                // Course descriptions can end a sentence with an email address.
+                var address = token.Value;
+                if (token.Index > 0 && char.IsWhiteSpace(value[token.Index - 1]) && address.EndsWith('.'))
+                    address = address[..^1];
+                addresses.Add(address);
+            }
         }
+        return addresses;
+    }
+
+    [Theory]
+    [InlineData("a@neu.edu_evil.com", "a@neu.edu_evil.com", false)]
+    [InlineData("a@neu.edu@evil.com", "a@neu.edu@evil.com", false)]
+    [InlineData(@"a\u0040neu.edu@evil.com", "a@neu.edu@evil.com", false)]
+    [InlineData(@"a\u0040NEU.EDU", "a@NEU.EDU", true)]
+    [InlineData("Contact a@neu.edu.", "a@neu.edu", true)]
+    [InlineData("a@neu.edu.", "a@neu.edu.", false)]
+    public void AddressScanChecksWholeDecodedTokens(string jsonValue, string expectedToken, bool allowed)
+    {
+        var json = System.Text.Encoding.UTF8.GetBytes($"\"{jsonValue}\"");
+        var token = Assert.Single(AddressTokens(json));
+        Assert.Equal(expectedToken, token);
+        Assert.Equal(allowed, InstructorEmail.IsAllowedAddress(token));
     }
 
     [Fact]

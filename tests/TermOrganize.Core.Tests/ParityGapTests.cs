@@ -271,4 +271,125 @@ public class ParityGapTests
             return null;
         }
     }
+
+    [Fact]
+    public void InstructorEmailKeepsOnlyInstitutionalDomains()
+    {
+        Assert.Equal("a.lovelace@northeastern.edu", InstructorEmail.Institutional("a.lovelace@northeastern.edu"));
+        Assert.Equal("Ada@NEU.edu", InstructorEmail.Institutional("Ada@NEU.edu"));
+        Assert.Equal("ada@northeastern.edu", InstructorEmail.Institutional("  ada@northeastern.edu  "));
+        Assert.Equal("ada@northeastern.edu", InstructorEmail.Institutional("Ada Lovelace <ada@northeastern.edu>"));
+        Assert.Null(InstructorEmail.Institutional("ada@husky.neu.edu"));
+        Assert.Null(InstructorEmail.Institutional("ada@coe.neu.edu"));
+        Assert.Null(InstructorEmail.Institutional("ada@ece.northeastern.edu"));
+        Assert.Null(InstructorEmail.Institutional("ada@gmail.com"));
+        Assert.Null(InstructorEmail.Institutional("not-an-email"));
+        Assert.Null(InstructorEmail.Institutional("   "));
+        Assert.Null(InstructorEmail.Institutional(null));
+        Assert.Equal("ada@northeastern.edu", InstructorEmail.Institutional("ada@gmail.com ada@northeastern.edu"));
+        Assert.Equal("ada@neu.edu", InstructorEmail.Institutional("ada@kent.edu ada@neu.edu"));
+        Assert.Null(InstructorEmail.Institutional("a@gmail.com b@kent.edu"));
+        Assert.Equal("a@northeastern.edu b@neu.edu", InstructorEmail.Institutional("a@northeastern.edu b@neu.edu"));
+        Assert.Null(InstructorEmail.Institutional("ada@northeastern.edu.example.org"));
+    }
+
+    [Fact]
+    public void BannerFacultyToInstructorFiltersNonInstitutionalEmails()
+    {
+        var valid = new BannerFaculty { DisplayName = "Ada Lovelace", EmailAddress = "ada@northeastern.edu" }.ToInstructor();
+        Assert.NotNull(valid);
+        Assert.Equal("ada@northeastern.edu", valid!.Email);
+
+        var personal = new BannerFaculty { DisplayName = "Ada Lovelace", EmailAddress = "ada@gmail.com" }.ToInstructor();
+        Assert.NotNull(personal);
+        Assert.Null(personal!.Email);
+
+        var student = new BannerFaculty { DisplayName = "Ada Lovelace", EmailAddress = "student@husky.neu.edu" }.ToInstructor();
+        Assert.NotNull(student);
+        Assert.Null(student!.Email);
+    }
+
+    [Fact]
+    public void CatalogIndexAndMakeSectionsSanitizeCachedEmails()
+    {
+        var rawSection = new CourseSection
+        {
+            Crn = "11111",
+            Subject = "CS",
+            Number = "3000",
+            SectionNumber = "01",
+            ClassType = "Lecture",
+            Instructors =
+            [
+                new Instructor { Name = "Good, Prof", Primary = true, Email = "prof@northeastern.edu" },
+                new Instructor { Name = "Student, TA", Primary = false, Email = "ta@husky.neu.edu" },
+            ],
+        };
+        var (directory, _) = CatalogIndex.MakeInstructorDirectory([rawSection]);
+        var good = directory.First(i => i.Name == "Good, Prof");
+        var ta = directory.First(i => i.Name == "Student, TA");
+        Assert.Equal("prof@northeastern.edu", good.Email);
+        Assert.Null(ta.Email);
+
+        var freshBanner = new BannerSection
+        {
+            CourseReferenceNumber = "11111",
+            Subject = "CS",
+            CourseNumber = "3000",
+            SequenceNumber = "01",
+        };
+        var sections = CatalogBuilder.MakeSections([freshBanner], new Dictionary<string, CourseSection> { ["11111"] = rawSection });
+        Assert.Equal("prof@northeastern.edu", sections[0].Instructors![0].Email);
+        Assert.Null(sections[0].Instructors![1].Email);
+    }
+
+    [Fact]
+    public void CatalogKnowledgePropagationPreservesCourseDetails()
+    {
+        var knowledge = TermCatalogCache.LocalKnowledge("202750");
+        Assert.NotEmpty(knowledge);
+        var cs3000Key = new CourseKey("CS", "3000");
+        Assert.True(knowledge.ContainsKey(cs3000Key));
+        var known = knowledge[cs3000Key];
+        Assert.False(string.IsNullOrWhiteSpace(known.Description));
+
+        var freshSections = new[]
+        {
+            new BannerSection
+            {
+                CourseReferenceNumber = "99999",
+                Subject = "CS",
+                CourseNumber = "3000",
+                SequenceNumber = "01",
+                CourseTitle = "Algorithms and Data",
+                CreditHours = 4,
+            },
+        };
+        var merged = CatalogBuilder.Merge(
+            existing: null,
+            fresh: freshSections,
+            term: new Term("202750", "Summer 2027"),
+            subjects: [],
+            campuses: [],
+            attributes: [],
+            knowledge: knowledge);
+        var course = merged.Courses.FirstOrDefault(c => c.Key == cs3000Key);
+        Assert.NotNull(course);
+        Assert.Equal(known.Description, course!.Description);
+        Assert.Equal(known.Prereqs, course.Prereqs);
+    }
+
+    [Fact]
+    public void CourseInfoIncludesDescriptionAndSupportsEquality()
+    {
+        var key = new CourseKey("CS", "3000");
+        var now = DateTimeOffset.UtcNow;
+        var info1 = new CourseInfo(key, "Algorithms", 4, 4, description: "Sample description", fetchedAt: now);
+        var info2 = new CourseInfo(key, "Algorithms", 4, 4, description: "Sample description", fetchedAt: now);
+        var info3 = new CourseInfo(key, "Algorithms", 4, 4, description: "Different description", fetchedAt: now);
+
+        Assert.Equal("Sample description", info1.Description);
+        Assert.Equal(info1, info2);
+        Assert.NotEqual(info1, info3);
+    }
 }

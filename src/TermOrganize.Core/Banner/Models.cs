@@ -18,6 +18,7 @@
 
 using System.Globalization;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace TermOrganize.Core;
 
@@ -97,7 +98,57 @@ public sealed class BannerFaculty
     {
         var name = DisplayName is null ? null : HtmlText.DecodeEntities(HtmlText.DecodeEntities(DisplayName)).NilIfBlank();
         if (name is null) return null;
-        return new Instructor { Name = name, Primary = PrimaryIndicator ?? false, Email = EmailAddress.NilIfBlank() };
+        return new Instructor { Name = name, Primary = PrimaryIndicator ?? false, Email = InstructorEmail.Institutional(EmailAddress) };
+    }
+}
+
+/// <summary>
+/// Instructor addresses kept from Banner. Only Northeastern's own domains stay;
+/// every other address is dropped, and nothing here is a student's personal data.
+/// </summary>
+public static class InstructorEmail
+{
+    // Whole-token, ASCII only. Anchored so a malformed string is rejected instead of
+    // being cut down to an address Banner never sent.
+    private static readonly Regex AddressRegex = new(
+        @"\A[A-Za-z0-9._%+\-]+@(?:[A-Za-z0-9\-]+\.)+[A-Za-z]{2,}\z",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly char[] Separators = [',', ';', '<', '>'];
+
+    public static bool IsAllowedDomain(string domain) =>
+        domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase) ||
+        domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when the whole string is one well-formed ASCII address whose domain is
+    /// exactly northeastern.edu or neu.edu.
+    /// </summary>
+    public static bool IsAllowedAddress(string? address)
+    {
+        if (address is null || !AddressRegex.IsMatch(address)) return false;
+        return IsAllowedDomain(address[(address.IndexOf('@') + 1)..]);
+    }
+
+    /// <summary>
+    /// The canonical filter. Banner sometimes puts two addresses in one field, separated
+    /// by whitespace, commas, or semicolons. Each token must be a whole allowed address;
+    /// anything else is dropped, never trimmed into a different address.
+    /// Subdomains (including husky.neu.edu) are not kept.
+    /// Returns the kept addresses joined by a space, or null when none remain.
+    /// </summary>
+    public static string? Institutional(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var kept = new List<string>();
+        foreach (var chunk in raw.Split(Separators))
+        {
+            foreach (var token in chunk.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (IsAllowedAddress(token)) kept.Add(token);
+            }
+        }
+        return kept.Count > 0 ? string.Join(" ", kept) : null;
     }
 }
 

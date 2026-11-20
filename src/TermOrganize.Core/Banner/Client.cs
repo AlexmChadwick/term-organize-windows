@@ -80,15 +80,23 @@ public sealed class BannerClient : IDisposable
     private readonly TimeSpan _attemptTimeout;
 
     public BannerClient(TimeSpan? timeout = null, int maxAttempts = 4)
+        : this(
+            new SocketsHttpHandler
+            {
+                UseCookies = false,
+                AutomaticDecompression = DecompressionMethods.All,
+                MaxConnectionsPerServer = 8,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            },
+            timeout,
+            maxAttempts)
+    {
+    }
+
+    /// <summary>A client over a caller-supplied handler, so tests can answer requests without a network.</summary>
+    public BannerClient(HttpMessageHandler handler, TimeSpan? timeout = null, int maxAttempts = 4)
     {
         var requestTimeout = timeout ?? TimeSpan.FromSeconds(60);
-        var handler = new SocketsHttpHandler
-        {
-            UseCookies = false,
-            AutomaticDecompression = DecompressionMethods.All,
-            MaxConnectionsPerServer = 8,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-        };
         _http = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = requestTimeout * 4,
@@ -310,7 +318,7 @@ public sealed class BannerClient : IDisposable
         var faculty = instructors.Select(instructor => new BannerFaculty
         {
             DisplayName = instructor.Name,
-            EmailAddress = instructor.Email,
+            EmailAddress = InstructorEmail.Institutional(instructor.Email),
             PrimaryIndicator = instructor.Primary,
         }).ToList();
         section.MeetingsFaculty ??= [];
@@ -387,6 +395,9 @@ public sealed class BannerClient : IDisposable
     public Task<string> FetchCourseCatalogDetailsHtmlAsync(string term, CourseKey course, CancellationToken cancellationToken = default) =>
         PostCourseFormAsync("courseSearchResults/getCourseCatalogDetails", term, course, cancellationToken);
 
+    public Task<string> FetchCourseDescriptionHtmlAsync(string term, CourseKey course, CancellationToken cancellationToken = default) =>
+        PostCourseFormAsync("courseSearchResults/getCourseDescription", term, course, cancellationToken);
+
     public Task<string> FetchCoursePrerequisitesHtmlAsync(string term, CourseKey course, CancellationToken cancellationToken = default) =>
         PostCourseFormAsync("courseSearchResults/getPrerequisites", term, course, cancellationToken);
 
@@ -422,10 +433,25 @@ public sealed class BannerClient : IDisposable
         var prerequisitesTask = FetchCoursePrerequisitesHtmlAsync(term, course, cancellationToken);
         var corequisitesTask = FetchCourseCorequisitesHtmlAsync(term, course, cancellationToken);
         var exclusionsTask = FetchCourseMutualExclusionsHtmlAsync(term, course, cancellationToken);
+        var descriptionTask = FetchCourseDescriptionHtmlAsync(term, course, cancellationToken);
         var lookupTask = subjects(cancellationToken);
-        await Task.WhenAll(detailsTask, prerequisitesTask, corequisitesTask, exclusionsTask, lookupTask).ConfigureAwait(false);
+        // The description runs in parallel but is optional: its failure leaves it null
+        // and must not drop the title and requisites.
+        try
+        {
+            await Task.WhenAll(detailsTask, prerequisitesTask, corequisitesTask, exclusionsTask, lookupTask).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The description request is still running; do not leave it unobserved.
+            _ = descriptionTask.ContinueWith(static t => { _ = t.Exception; }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            throw;
+        }
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);
         var lookup = lookupTask.Result;
+        string? description = null;
+        try { description = BannerParsers.Description(await descriptionTask.ConfigureAwait(false)).NilIfBlank(); }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested) { }
         return new CourseInfo(
             course,
             details.Title ?? "",
@@ -436,7 +462,8 @@ public sealed class BannerClient : IDisposable
             BannerParsers.MutualExclusions(exclusionsTask.Result, lookup),
             term,
             null,
-            now ?? DateTimeOffset.UtcNow);
+            now ?? DateTimeOffset.UtcNow,
+            description);
     }
 
     /// <summary>Which of the courses had at least one section in the term.</summary>

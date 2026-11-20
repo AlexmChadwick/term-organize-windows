@@ -49,6 +49,26 @@ public class BundledCatalogTests
         AssertOnlyNortheasternDomains(fromGzip);
     }
 
+    [Fact]
+    public void EveryShippedCatalogAssetHasOnlyNortheasternEmails()
+    {
+        var directory = Path.GetDirectoryName(BundledCatalog.Resolve("term-202710.json.gz"))!;
+        var files = Directory.EnumerateFiles(directory)
+            .Where(file => CatalogArchive.TermCode(file) is not null)
+            .ToList();
+        Assert.Contains(files, file => file.EndsWith("term-202710.catalog", StringComparison.Ordinal));
+        Assert.Contains(files, file => file.EndsWith("term-202710.json.gz", StringComparison.Ordinal));
+        Assert.Contains(files, file => file.EndsWith("term-202730.json.gz", StringComparison.Ordinal));
+        foreach (var file in files)
+        {
+            var bytes = File.ReadAllBytes(file);
+            var json = bytes.Length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B ? GzipJson(file)
+                : bytes.Length > 3 && bytes[0] == (byte)'b' && bytes[1] == (byte)'v' && bytes[2] == (byte)'x' ? LzfseDecoder.Decompress(bytes)
+                : bytes;
+            AssertOnlyNortheasternDomains(json);
+        }
+    }
+
     private static byte[] GzipJson(string path)
     {
         using var gzip = new GZipStream(File.OpenRead(path), CompressionMode.Decompress);
@@ -60,12 +80,13 @@ public class BundledCatalogTests
     private static void AssertOnlyNortheasternDomains(byte[] json)
     {
         var text = System.Text.Encoding.UTF8.GetString(json);
-        var addresses = Regex.Matches(text, @"[^\s""@]+@([^\s""@]+)");
+        var addresses = Regex.Matches(text, @"[^\s""@]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)");
         Assert.NotEmpty(addresses);
         foreach (Match address in addresses)
         {
             var domain = address.Groups[1].Value;
-            Assert.True(domain is "northeastern.edu" or "neu.edu", address.Value);
+            Assert.True(domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase), address.Value);
         }
     }
 

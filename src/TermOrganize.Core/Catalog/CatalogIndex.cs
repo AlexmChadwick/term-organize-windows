@@ -307,11 +307,12 @@ public sealed class CatalogIndex
         {
             foreach (var instructor in section.Instructors ?? [])
             {
+                var cleanEmail = InstructorEmail.Institutional(instructor.Email);
                 if (!entries.TryGetValue(instructor.Name, out var entry))
-                    entry = (instructor.DisplayName, instructor.Email, [], []);
+                    entry = (instructor.DisplayName, cleanEmail, [], []);
                 entry.Crns.Add(section.Crn);
                 if (!entry.Keys.Contains(section.CourseKey)) entry.Keys.Add(section.CourseKey);
-                entry.Email ??= instructor.Email;
+                entry.Email ??= cleanEmail;
                 entries[instructor.Name] = entry;
             }
         }

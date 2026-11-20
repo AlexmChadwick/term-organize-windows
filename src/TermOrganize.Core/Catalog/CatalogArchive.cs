@@ -29,8 +29,26 @@ public static class CatalogArchive
         return code.Length == 6 && code.All(char.IsDigit) ? code : null;
     }
 
+    /// <summary>
+    /// Keeps only exact northeastern.edu and neu.edu instructor addresses, so a student or
+    /// subdomain address in an older file is never loaded, exposed, or written back.
+    /// Idempotent. Returns the same catalog.
+    /// </summary>
+    public static TermCatalog SanitizeEmails(TermCatalog catalog)
+    {
+        foreach (var section in catalog.Sections)
+        {
+            foreach (var instructor in section.Instructors ?? [])
+            {
+                if (instructor.Email is not null) instructor.Email = InstructorEmail.Institutional(instructor.Email);
+            }
+        }
+        return catalog;
+    }
+
     public static byte[] Encode(TermCatalog catalog)
     {
+        SanitizeEmails(catalog);
         var json = JsonSerializer.SerializeToUtf8Bytes(catalog, AppJson.Catalog);
         using var stream = new MemoryStream();
         using (var gzip = new GZipStream(stream, CompressionLevel.SmallestSize, leaveOpen: true))
@@ -53,8 +71,9 @@ public static class CatalogArchive
         else if (data.Length >= 4 && data[0] == (byte)'b' && data[1] == (byte)'v' && data[2] == (byte)'x')
             json = LzfseDecoder.Decompress(data);
         else throw new InvalidDataException("Unrecognized catalog encoding.");
-        return JsonSerializer.Deserialize<TermCatalog>(json, AppJson.Catalog)
+        var catalog = JsonSerializer.Deserialize<TermCatalog>(json, AppJson.Catalog)
             ?? throw new InvalidDataException("The catalog JSON was empty.");
+        return SanitizeEmails(catalog);
     }
 
     public static TermCatalog Read(string path) => Decode(File.ReadAllBytes(path));

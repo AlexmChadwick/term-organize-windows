@@ -13,6 +13,7 @@ public sealed class CourseInfo : IEquatable<CourseInfo>
 {
     public CourseKey Key { get; }
     public string Title { get; }
+    public string? Description { get; }
     /// <summary>Credit hours; null when the catalog entry doesn't say.</summary>
     public double? MinCredits { get; }
     public double? MaxCredits { get; }
@@ -42,10 +43,12 @@ public sealed class CourseInfo : IEquatable<CourseInfo>
         IEnumerable<CourseKey>? equivalents = null,
         string sourceTerm = "",
         bool? isRetired = null,
-        DateTimeOffset? fetchedAt = null)
+        DateTimeOffset? fetchedAt = null,
+        string? description = null)
     {
         Key = key;
         Title = title;
+        Description = description;
         MinCredits = minCredits;
         MaxCredits = maxCredits;
         Prerequisites = prerequisites;
@@ -68,8 +71,9 @@ public sealed class CourseInfo : IEquatable<CourseInfo>
     }
 
     public bool Equals(CourseInfo? other) =>
-        other is not null && Key == other.Key && Title == other.Title && MinCredits == other.MinCredits &&
-        MaxCredits == other.MaxCredits && Equals(Prerequisites, other.Prerequisites) && Equals(Corequisites, other.Corequisites) &&
+        other is not null && Key == other.Key && Title == other.Title && Description == other.Description &&
+        MinCredits == other.MinCredits && MaxCredits == other.MaxCredits &&
+        Equals(Prerequisites, other.Prerequisites) && Equals(Corequisites, other.Corequisites) &&
         Equivalents.SequenceEqual(other.Equivalents) && SourceTerm == other.SourceTerm && IsRetired == other.IsRetired &&
         FetchedAt == other.FetchedAt;
 

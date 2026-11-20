@@ -14,13 +14,44 @@ internal static class CourseDetail
 {
     private static readonly HashSet<string> Busy = new(StringComparer.Ordinal);
 
+    // The course each host was last asked to show. A slow Banner lookup checks this
+    // before it writes, so fast navigation never shows the wrong course.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Grid, System.Runtime.CompilerServices.StrongBox<CourseKey>> Showing = new();
+
+    private static bool IsShowing(Grid host, CourseKey key) =>
+        Showing.TryGetValue(host, out var box) && box.Value == key;
+
     public static void Show(Grid host, AppSession session, CourseKey key, bool inWindow, bool allowLiveRefresh = true)
     {
+        Showing.AddOrUpdate(host, new System.Runtime.CompilerServices.StrongBox<CourseKey>(key));
         var index = session.Index;
-        var course = index?.Course(key);
-        if (index is null || course is null)
+        if (index is null)
         {
-            Chrome.Fill(host, key.ToString(), "That course is not in this term\u2019s catalog.");
+            Chrome.Fill(host, key.ToString(), "The catalog is still loading.");
+            return;
+        }
+        var course = index.Course(key);
+        if (course is null)
+        {
+            var (fallback, fallbackTermCode) = FindLocalCourse(session, key);
+            if (fallback is not null)
+            {
+                var info = new CourseInfo(
+                    key,
+                    fallback.Title,
+                    fallback.MinCredits,
+                    fallback.MaxCredits,
+                    fallback.Prereqs,
+                    fallback.Coreqs,
+                    sourceTerm: fallbackTermCode ?? index.Term.Code,
+                    isRetired: fallbackTermCode != index.Term.Code,
+                    description: fallback.Description);
+                ShowMissingCourse(host, session, key, info, index, inWindow);
+                return;
+            }
+
+            Chrome.Fill(host, key.ToString(), "Checking Banner\u2019s catalog\u2026");
+            _ = LoadMissingCourseAsync(host, session, key, index, inWindow);
             return;
         }
         session.Store.RecordView(key, index.Term.Code);
@@ -81,8 +112,11 @@ internal static class CourseDetail
         Grid.SetRow(sections, 1);
         host.Children.Add(sections);
         if (!allowLiveRefresh) return;
-        var needsDetails = string.IsNullOrWhiteSpace(course.Description)
-            || index.Sections(key).Any(section => section.Restrictions is null);
+        var needsDetails = !course.DetailsLoaded
+            || string.IsNullOrWhiteSpace(course.Description)
+            || index.Sections(key).Any(section => section.Instructors is null)
+            || index.Sections(key).Any(section => section.Restrictions is null)
+            || (course.SpecialTopics && index.Sections(key).Any(section => string.IsNullOrWhiteSpace(section.Description)));
         if (session.Store.Preferences.AutoRefreshSeats)
             _ = RefreshAsync(host, session, course, index.Term.Code, inWindow);
         else if (needsDetails)
@@ -179,7 +213,8 @@ internal static class CourseDetail
     private static async Task FillDetailsAsync(AppSession session, Course course, string term, string? crn)
     {
         if (session.Index is null) return;
-        if (string.IsNullOrWhiteSpace(course.Description) && crn is not null)
+        var changed = false;
+        if ((!course.DetailsLoaded || string.IsNullOrWhiteSpace(course.Description)) && crn is not null)
         {
             var detailed = await BannerClient.Shared.FetchCourseDetailsAsync(
                 term,
@@ -187,15 +222,195 @@ internal static class CourseDetail
                 course,
                 new BannerParsers.SubjectLookup(session.Index.Catalog.Subjects));
             CatalogBuilder.ApplyCourseDetails(course, detailed);
+            changed = true;
         }
-        await FillRestrictionsAsync(session, course.Key, term);
+        var sections = session.Index.Sections(course.Key);
+        if (course.SpecialTopics)
+        {
+            var first = true;
+            foreach (var section in sections.Where(s => string.IsNullOrWhiteSpace(s.Description)))
+            {
+                if (!first) await Task.Delay(150);
+                first = false;
+                try
+                {
+                    var html = await BannerClient.Shared.FetchDescriptionHtmlAsync(term, section.Crn);
+                    section.Description = BannerParsers.Description(html).NilIfBlank();
+                    changed = true;
+                }
+                catch (Exception) { }
+            }
+        }
+        var missingInstructors = sections.Where(s => s.Instructors is null).ToList();
+        if (missingInstructors.Count > 0)
+        {
+            var first = true;
+            foreach (var section in missingInstructors)
+            {
+                if (!first) await Task.Delay(150);
+                first = false;
+                try
+                {
+                    var instructors = await BannerClient.Shared.FetchInstructorsAsync(term, section.Crn);
+                    foreach (var instructor in instructors) instructor.Email = InstructorEmail.Institutional(instructor.Email);
+                    section.Instructors = instructors;
+                    changed = true;
+                }
+                catch (Exception) { }
+            }
+        }
+        if (await FillRestrictionsAsync(session, course.Key, term)) changed = true;
+        if (!changed) return;
+        session.Index.Catalog.RecomputePostreqs();
+        try { TermCatalogCache.Save(session.Index.Catalog); } catch (Exception) { }
+    }
+
+    private static (Course? Course, string? TermCode) FindLocalCourse(AppSession session, CourseKey key)
+    {
+        foreach (var index in session.IndexesNewestFirst())
+        {
+            if (index.Course(key) is Course c) return (c, index.Term.Code);
+        }
+        foreach (var code in BundledCatalog.TermCodes())
+        {
+            try
+            {
+                var cat = BundledCatalog.TryLoad(code);
+                var c = cat?.Courses.FirstOrDefault(item => item.Key == key);
+                if (c is not null) return (c, code);
+            }
+            catch (Exception) { }
+        }
+        if (Directory.Exists(TermCatalogCache.Root))
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(TermCatalogCache.Root))
+                {
+                    var code = CatalogArchive.TermCode(file);
+                    if (code is null) continue;
+                    var cat = TermCatalogCache.TryLoad(code);
+                    var c = cat?.Courses.FirstOrDefault(item => item.Key == key);
+                    if (c is not null) return (c, code);
+                }
+            }
+            catch (Exception) { }
+        }
+        return (null, null);
+    }
+
+    private static async Task LoadMissingCourseAsync(Grid host, AppSession session, CourseKey key, CatalogIndex index, bool inWindow)
+    {
+        var termCode = index.Term.Code;
+        const string NotListed = "Banner\u2019s recent course catalogs don\u2019t list it either, so the course code may have changed.";
+        try
+        {
+            var exists = await BannerClient.Shared.CatalogListsAsync(key, termCode);
+            if (!IsShowing(host, key)) return;
+            if (!exists)
+            {
+                Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", NotListed);
+                return;
+            }
+            var info = await BannerClient.Shared.FetchCourseInfoAsync(
+                key,
+                termCode,
+                _ => Task.FromResult(new BannerParsers.SubjectLookup(index.Catalog.Subjects)));
+            if (!IsShowing(host, key)) return;
+            if (info is null)
+            {
+                Chrome.Fill(host, $"{key} Isn\u2019t Offered in {index.Term.Name}", NotListed);
+                return;
+            }
+            ShowMissingCourse(host, session, key, info, index, inWindow);
+        }
+        catch (Exception ex)
+        {
+            if (!IsShowing(host, key)) return;
+            // A failed request says nothing about whether the course is offered.
+            Chrome.Fill(host, $"{key} \u00b7 Couldn\u2019t check {index.Term.Name}", "Banner\u2019s course catalog didn\u2019t answer, so the course\u2019s details couldn\u2019t be checked. Check your connection and open the course again. (" + ex.Message + ")");
+        }
+    }
+
+    private static void ShowMissingCourse(Grid host, AppSession session, CourseKey key, CourseInfo info, CatalogIndex index, bool inWindow)
+    {
+        host.Children.Clear();
+        host.RowDefinitions.Clear();
+        host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var header = new StackPanel { Spacing = 8 };
+        header.Children.Add(Chrome.Heading($"{key}  {info.Title}"));
+        var isRetired = info.IsRetired == true;
+        var note = isRetired
+            ? "No longer offered; last listed " + OfferingHistory.Label(info.SourceTerm)
+            : $"Not offered in {index.Term.Name}";
+        var subtitle = string.IsNullOrWhiteSpace(info.CreditsLabel) ? note : $"{info.CreditsLabel} \u00b7 {note}";
+        header.Children.Add(Chrome.Body(subtitle));
+
+        if (!string.IsNullOrWhiteSpace(info.Description))
+            header.Children.Add(Chrome.Body(info.Description));
+
+        if (RequisiteTreeView.Build(info.Prerequisites, session, "Prerequisites") is UIElement prereq)
+            header.Children.Add(prereq);
+        if (RequisiteTreeView.Build(info.Corequisites, session, "Corequisites") is UIElement coreq)
+            header.Children.Add(coreq);
+
+        var dependents = index.Courses
+            .Where(c => c.Prereqs?.ReferencedCourses().Contains(key) == true)
+            .Select(c => c.Key)
+            .OrderBy(k => k)
+            .ToList();
+        if (dependents.Count > 0)
+        {
+            var depPanel = new StackPanel { Spacing = 4 };
+            depPanel.Children.Add(new TextBlock { Text = "Courses this course leads to", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+            var wrap = new WrapLayout { Spacing = 6 };
+            foreach (var depKey in dependents)
+            {
+                var btn = new Button { Content = depKey.ToString() };
+                btn.Click += (_, _) => CourseWindow.Open(session, depKey);
+                wrap.Children.Add(btn);
+            }
+            depPanel.Children.Add(wrap);
+            header.Children.Add(depPanel);
+        }
+
+        var standing = CourseDegreePlanStandingLookup.For(session.Store, key);
+        if (standing is not null) header.Children.Add(Chrome.Body(standing.Text));
+
+        var actions = new WrapLayout { Spacing = 8 };
+        var url = BannerClient.CatalogPageUrl(index.Term.Code, key);
+        if (url is not null)
+        {
+            var openUrl = new Button { Content = "View on Northeastern website" };
+            openUrl.Click += async (_, _) => await Launcher.LaunchUriAsync(url);
+            actions.Children.Add(openUrl);
+        }
+        if (!inWindow)
+        {
+            var openWin = new Button { Content = "Open in a window" };
+            openWin.Click += (_, _) => CourseWindow.Open(session, key);
+            actions.Children.Add(openWin);
+        }
+        header.Children.Add(actions);
+
+        var headerScroll = new ScrollViewer
+        {
+            Content = header,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        host.Children.Add(headerScroll);
     }
 
     /// <summary>One restrictions request at a time, with a short pause, so a course with many sections does not hammer Banner.</summary>
-    private static async Task FillRestrictionsAsync(AppSession session, CourseKey key, string term)
+    private static async Task<bool> FillRestrictionsAsync(AppSession session, CourseKey key, string term)
     {
         var sections = session.Index?.Sections(key).Where(section => section.Restrictions is null).ToList();
-        if (sections is null || sections.Count == 0) return;
+        if (sections is null || sections.Count == 0) return false;
+        var filled = false;
         for (var i = 0; i < sections.Count; i++)
         {
             if (i > 0) await Task.Delay(150);
@@ -203,12 +418,14 @@ internal static class CourseDetail
             {
                 var html = await BannerClient.Shared.FetchRestrictionsHtmlAsync(term, sections[i].Crn);
                 sections[i].Restrictions = SectionRestrictions.Parse(html);
+                filled = true;
             }
             catch (Exception)
             {
                 // Leave the section unknown. The caption stays hidden.
             }
         }
+        return filled;
     }
 
     private static Border SectionCard(AppSession session, CourseSection section, string title, string term)

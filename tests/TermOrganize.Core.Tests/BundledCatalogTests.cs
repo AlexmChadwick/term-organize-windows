@@ -85,7 +85,8 @@ public class BundledCatalogTests
         foreach (Match address in addresses)
         {
             var domain = address.Groups[1].Value;
-            Assert.True(domain is "northeastern.edu" or "neu.edu", address.Value);
+            Assert.True(domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase), address.Value);
         }
     }
 

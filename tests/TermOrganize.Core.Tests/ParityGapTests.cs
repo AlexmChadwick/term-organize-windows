@@ -383,9 +383,10 @@ public class ParityGapTests
     public void CourseInfoIncludesDescriptionAndSupportsEquality()
     {
         var key = new CourseKey("CS", "3000");
-        var info1 = new CourseInfo(key, "Algorithms", 4, 4, description: "Sample description");
-        var info2 = new CourseInfo(key, "Algorithms", 4, 4, description: "Sample description");
-        var info3 = new CourseInfo(key, "Algorithms", 4, 4, description: "Different description");
+        var now = DateTimeOffset.UtcNow;
+        var info1 = new CourseInfo(key, "Algorithms", 4, 4, description: "Sample description", fetchedAt: now);
+        var info2 = new CourseInfo(key, "Algorithms", 4, 4, description: "Sample description", fetchedAt: now);
+        var info3 = new CourseInfo(key, "Algorithms", 4, 4, description: "Different description", fetchedAt: now);
 
         Assert.Equal("Sample description", info1.Description);
         Assert.Equal(info1, info2);

@@ -53,14 +53,11 @@ public class BundledCatalogTests
     [Fact]
     public void EveryShippedCatalogAssetHasOnlyNortheasternEmails()
     {
-        var directory = Path.GetDirectoryName(BundledCatalog.Resolve("term-202710.json.gz"))!;
-        var files = Directory.EnumerateFiles(directory)
-            .Where(file => CatalogArchive.TermCode(file) is not null)
+        // term-202730.catalog is a test fixture that is not copied to the output directory,
+        // so resolve each asset individually instead of listing one directory.
+        var files = new[] { "term-202710.catalog", "term-202710.json.gz", "term-202730.catalog", "term-202730.json.gz" }
+            .Select(name => BundledCatalog.Resolve(name) ?? throw new Xunit.Sdk.XunitException($"Missing bundled catalog asset {name}"))
             .ToList();
-        Assert.Contains(files, file => file.EndsWith("term-202710.catalog", StringComparison.Ordinal));
-        Assert.Contains(files, file => file.EndsWith("term-202710.json.gz", StringComparison.Ordinal));
-        Assert.Contains(files, file => file.EndsWith("term-202730.catalog", StringComparison.Ordinal));
-        Assert.Contains(files, file => file.EndsWith("term-202730.json.gz", StringComparison.Ordinal));
         foreach (var file in files)
         {
             var bytes = File.ReadAllBytes(file);

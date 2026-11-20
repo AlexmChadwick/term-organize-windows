@@ -225,7 +225,6 @@ public class IcsParityTests
 
         var course = new Course
         {
-            Key = courseKey,
             Title = "Catalog Fundamentals",
             Subject = "CS",
             Number = "2500",
@@ -249,7 +248,6 @@ public class IcsParityTests
 
         var emptyCourse = new Course
         {
-            Key = courseKey,
             Title = "",
             Subject = "CS",
             Number = "2500",

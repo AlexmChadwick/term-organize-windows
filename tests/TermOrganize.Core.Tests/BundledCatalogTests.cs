@@ -80,7 +80,7 @@ public class BundledCatalogTests
     private static void AssertOnlyNortheasternDomains(byte[] json)
     {
         var text = System.Text.Encoding.UTF8.GetString(json);
-        var addresses = Regex.Matches(text, @"[^\s""@]+@([^\s""@]+)");
+        var addresses = Regex.Matches(text, @"[^\s""@]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)");
         Assert.NotEmpty(addresses);
         foreach (Match address in addresses)
         {

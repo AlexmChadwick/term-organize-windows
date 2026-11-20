@@ -49,6 +49,26 @@ public class BundledCatalogTests
         AssertOnlyNortheasternDomains(fromGzip);
     }
 
+    [Fact]
+    public void EveryShippedCatalogAssetHasOnlyNortheasternEmails()
+    {
+        var directory = Path.GetDirectoryName(BundledCatalog.Resolve("term-202710.json.gz"))!;
+        var files = Directory.EnumerateFiles(directory)
+            .Where(file => CatalogArchive.TermCode(file) is not null)
+            .ToList();
+        Assert.Contains(files, file => file.EndsWith("term-202710.catalog", StringComparison.Ordinal));
+        Assert.Contains(files, file => file.EndsWith("term-202710.json.gz", StringComparison.Ordinal));
+        Assert.Contains(files, file => file.EndsWith("term-202730.json.gz", StringComparison.Ordinal));
+        foreach (var file in files)
+        {
+            var bytes = File.ReadAllBytes(file);
+            var json = bytes.Length > 2 && bytes[0] == 0x1F && bytes[1] == 0x8B ? GzipJson(file)
+                : bytes.Length > 3 && bytes[0] == (byte)'b' && bytes[1] == (byte)'v' && bytes[2] == (byte)'x' ? LzfseDecoder.Decompress(bytes)
+                : bytes;
+            AssertOnlyNortheasternDomains(json);
+        }
+    }
+
     private static byte[] GzipJson(string path)
     {
         using var gzip = new GZipStream(File.OpenRead(path), CompressionMode.Decompress);

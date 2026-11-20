@@ -310,7 +310,7 @@ public sealed class BannerClient : IDisposable
         var faculty = instructors.Select(instructor => new BannerFaculty
         {
             DisplayName = instructor.Name,
-            EmailAddress = instructor.Email,
+            EmailAddress = InstructorEmail.Institutional(instructor.Email),
             PrimaryIndicator = instructor.Primary,
         }).ToList();
         section.MeetingsFaculty ??= [];
@@ -387,6 +387,9 @@ public sealed class BannerClient : IDisposable
     public Task<string> FetchCourseCatalogDetailsHtmlAsync(string term, CourseKey course, CancellationToken cancellationToken = default) =>
         PostCourseFormAsync("courseSearchResults/getCourseCatalogDetails", term, course, cancellationToken);
 
+    public Task<string> FetchCourseDescriptionHtmlAsync(string term, CourseKey course, CancellationToken cancellationToken = default) =>
+        PostCourseFormAsync("courseSearchResults/getCourseDescription", term, course, cancellationToken);
+
     public Task<string> FetchCoursePrerequisitesHtmlAsync(string term, CourseKey course, CancellationToken cancellationToken = default) =>
         PostCourseFormAsync("courseSearchResults/getPrerequisites", term, course, cancellationToken);
 
@@ -422,10 +425,14 @@ public sealed class BannerClient : IDisposable
         var prerequisitesTask = FetchCoursePrerequisitesHtmlAsync(term, course, cancellationToken);
         var corequisitesTask = FetchCourseCorequisitesHtmlAsync(term, course, cancellationToken);
         var exclusionsTask = FetchCourseMutualExclusionsHtmlAsync(term, course, cancellationToken);
+        var descriptionTask = FetchCourseDescriptionHtmlAsync(term, course, cancellationToken);
         var lookupTask = subjects(cancellationToken);
-        await Task.WhenAll(detailsTask, prerequisitesTask, corequisitesTask, exclusionsTask, lookupTask).ConfigureAwait(false);
+        await Task.WhenAll(detailsTask, prerequisitesTask, corequisitesTask, exclusionsTask, descriptionTask, lookupTask).ConfigureAwait(false);
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);
         var lookup = lookupTask.Result;
+        string? description = null;
+        try { description = BannerParsers.Description(descriptionTask.Result).NilIfBlank(); }
+        catch (Exception) { }
         return new CourseInfo(
             course,
             details.Title ?? "",
@@ -436,7 +443,8 @@ public sealed class BannerClient : IDisposable
             BannerParsers.MutualExclusions(exclusionsTask.Result, lookup),
             term,
             null,
-            now ?? DateTimeOffset.UtcNow);
+            now ?? DateTimeOffset.UtcNow,
+            description);
     }
 
     /// <summary>Which of the courses had at least one section in the term.</summary>

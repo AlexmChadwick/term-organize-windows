@@ -60,7 +60,14 @@ public static class CatalogBuilder
                 InstructionMethod = section.InstructionalMethodDescription is null ? null : HtmlText.DecodeEntities(section.InstructionalMethodDescription),
                 Meetings = meetings,
                 // Banner's search results currently hide faculty; keep what we knew.
-                Instructors = bannerInstructors.Count == 0 ? prior?.Instructors : bannerInstructors,
+                Instructors = bannerInstructors.Count == 0
+                    ? prior?.Instructors?.Select(instructor => new Instructor
+                    {
+                        Name = instructor.Name,
+                        Primary = instructor.Primary,
+                        Email = InstructorEmail.Institutional(instructor.Email),
+                    }).ToList()
+                    : bannerInstructors,
                 CrossListCRNs = crossList,
                 Attributes = attributes.Select(attribute => attribute.Code).ToList(),
                 Description = prior?.Description,

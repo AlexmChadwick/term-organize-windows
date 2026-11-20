@@ -18,6 +18,7 @@
 
 using System.Globalization;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace TermOrganize.Core;
 
@@ -97,7 +98,48 @@ public sealed class BannerFaculty
     {
         var name = DisplayName is null ? null : HtmlText.DecodeEntities(HtmlText.DecodeEntities(DisplayName)).NilIfBlank();
         if (name is null) return null;
-        return new Instructor { Name = name, Primary = PrimaryIndicator ?? false, Email = EmailAddress.NilIfBlank() };
+        return new Instructor { Name = name, Primary = PrimaryIndicator ?? false, Email = InstructorEmail.Institutional(EmailAddress) };
+    }
+}
+
+/// <summary>
+/// Instructor addresses kept from Banner. Only Northeastern's own domains stay;
+/// every other address is dropped, and nothing here is a student's personal data.
+/// </summary>
+public static class InstructorEmail
+{
+    private static readonly Regex AddressRegex = new(
+        @"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+        RegexOptions.Compiled);
+
+    public static bool IsAllowedDomain(string domain) =>
+        domain.Equals("northeastern.edu", StringComparison.OrdinalIgnoreCase) ||
+        domain.Equals("neu.edu", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Addresses whose domain is exactly northeastern.edu or neu.edu.
+    /// Banner sometimes puts two addresses in one field, separated by a space.
+    /// Subdomains (including husky.neu.edu) are not kept.
+    /// Returns null when none remain.
+    /// </summary>
+    public static string? Institutional(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var matches = AddressRegex.Matches(raw);
+        if (matches.Count == 0) return null;
+        var kept = new List<string>();
+        foreach (Match match in matches)
+        {
+            var address = match.Value;
+            var at = address.LastIndexOf('@');
+            if (at <= 0) continue;
+            var domain = address[(at + 1)..].TrimEnd('.').ToLowerInvariant();
+            if (IsAllowedDomain(domain))
+            {
+                kept.Add(address);
+            }
+        }
+        return kept.Count > 0 ? string.Join(" ", kept) : null;
     }
 }
 

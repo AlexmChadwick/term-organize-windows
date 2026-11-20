@@ -10,7 +10,44 @@ namespace TermOrganize.Core;
 /// </summary>
 public static class IcsWriter
 {
-    public static string Write(string calendarName, Term term, IEnumerable<CourseSection> sections, DateTimeOffset? now = null, Guid? planId = null)
+    /// <summary>
+    /// Writes a schedule plan as .ics text using the plan/index event builder (<see cref="ScheduleExporter.Events"/>).
+    /// Both this method and the plan exporter use the resolved catalog course title with Swift's fallback,
+    /// and format the calendar name as <c>{plan.Name} – {index.Term.Name}</c>.
+    /// </summary>
+    public static string Write(SchedulePlan plan, CatalogIndex index, DateTimeOffset? now = null)
+    {
+        var (events, _) = ScheduleExporter.Events(plan, index);
+        var name = $"{plan.Name} \u2013 {index.Term.Name}";
+        return ScheduleExporter.IcsString(events, name, now);
+    }
+
+    /// <summary>
+    /// Writes chosen sections as .ics text.
+    /// <para>
+    /// UID contract:
+    /// When <paramref name="planId"/> is specified, UIDs use the plan GUID:
+    /// <c>{planId:D}-{crn}-{index}@neuclasssearch</c>, matching Swift and <see cref="ScheduleExporter"/>.
+    /// When <paramref name="planId"/> is omitted (section-only fallback), UIDs fall back to scoping by
+    /// <paramref name="term"/>.Code: <c>{term.Code}-{crn}-{index}@neuclasssearch</c>.
+    /// Callers exporting a schedule plan should always provide <paramref name="planId"/> (or call
+    /// <see cref="Write(SchedulePlan, CatalogIndex, DateTimeOffset?)"/>) so two plans in the same term
+    /// cannot produce colliding UIDs.
+    /// </para>
+    /// <para>
+    /// Course title resolution:
+    /// If <paramref name="titleOf"/> is provided, it is invoked with each section's course key; if it returns
+    /// a non-empty catalog title, that title is used. Otherwise, it falls back to <see cref="CourseSection.Title"/>,
+    /// matching Swift's fallback behavior.
+    /// </para>
+    /// </summary>
+    public static string Write(
+        string calendarName,
+        Term term,
+        IEnumerable<CourseSection> sections,
+        DateTimeOffset? now = null,
+        Guid? planId = null,
+        Func<CourseKey, string?>? titleOf = null)
     {
         // CRNs repeat across terms, so UIDs lead with the plan id (or the Banner term code) like the Swift export.
         var scope = planId?.ToString("D") ?? term.Code;
@@ -18,9 +55,11 @@ public static class IcsWriter
         foreach (var section in sections)
         {
             var code = section.CourseKey.ToString();
+            var catalogTitle = titleOf?.Invoke(section.CourseKey);
+            var title = string.IsNullOrEmpty(catalogTitle) ? section.Title : catalogTitle;
             var notes = new List<string>
             {
-                section.Title,
+                title,
                 $"CRN {section.Crn} · {ScheduleFormat.SectionTitle(section)}",
             };
             if (ScheduleFormat.Instructors(section) is { } instructors) notes.Add("Instructor: " + instructors);
@@ -37,7 +76,7 @@ public static class IcsWriter
                 if (FirstDate(startDay, weekdays) is not { } first || first > endDay) continue;
                 events.Add(new ScheduleExportEvent
                 {
-                    Uid = $"{scope}-{section.Crn}-{index}@termorganize",
+                    Uid = $"{scope}-{section.Crn}-{index}@neuclasssearch",
                     Title = $"{code} {section.ClassType}",
                     Location = LocationOf(meeting, section),
                     Notes = string.Join('\n', notes),
@@ -54,7 +93,7 @@ public static class IcsWriter
                 var timed = exam.Start is not null && exam.End is not null;
                 events.Add(new ScheduleExportEvent
                 {
-                    Uid = $"{scope}-{section.Crn}-final@termorganize",
+                    Uid = $"{scope}-{section.Crn}-final@neuclasssearch",
                     Title = $"{code} Final Exam",
                     Location = LocationOf(exam, section),
                     Notes = string.Join('\n', new[] { "Final exam" }.Concat(notes)),

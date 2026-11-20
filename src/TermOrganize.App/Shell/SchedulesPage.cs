@@ -3,6 +3,7 @@
 
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Text;
 using TermOrganize.Core;
 using Windows.ApplicationModel.DataTransfer;
 
@@ -80,9 +81,20 @@ public sealed class SchedulesPage : UserControl
     public void ExportIcs()
     {
         if (_plan is null || _session.Term is null) return;
-        var sections = SelectedSections().ToList();
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Sanitize(_plan.Name) + ".ics");
-        File.WriteAllText(path, IcsWriter.Write(_plan.Name, _session.Term, sections, planId: _plan.Id));
+        var calendarName = $"{_plan.Name} \u2013 {_session.Term.Name}";
+        string text;
+        if (_session.Index is not null)
+        {
+            var (events, _) = ScheduleExporter.Events(_plan, _session.Index);
+            text = ScheduleExporter.IcsString(events, calendarName);
+        }
+        else
+        {
+            var sections = SelectedSections().ToList();
+            text = IcsWriter.Write(calendarName, _session.Term, sections, planId: _plan.Id, titleOf: key => _session.Index?.Course(key)?.Title);
+        }
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), ScheduleExporter.FileName(calendarName, "ics"));
+        File.WriteAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         _window.SetStatus("Wrote " + path);
     }
 

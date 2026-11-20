@@ -475,10 +475,11 @@ public static partial class ScheduleExporter
             lines.Add("BEGIN:VEVENT");
             lines.Add("UID:" + calendarEvent.Uid);
             lines.Add("DTSTAMP:" + stamp);
-            if (calendarEvent.StartMinute is int start && calendarEvent.EndMinute is int end)
+            var isTimed = calendarEvent.StartMinute is int start && calendarEvent.EndMinute is int end;
+            if (isTimed)
             {
-                lines.Add("DTSTART;TZID=America/New_York:" + LocalStamp(calendarEvent.FirstDate, start));
-                lines.Add("DTEND;TZID=America/New_York:" + LocalStamp(calendarEvent.FirstDate, end));
+                lines.Add("DTSTART;TZID=America/New_York:" + LocalStamp(calendarEvent.FirstDate, calendarEvent.StartMinute!.Value));
+                lines.Add("DTEND;TZID=America/New_York:" + LocalStamp(calendarEvent.FirstDate, calendarEvent.EndMinute!.Value));
             }
             else
             {
@@ -488,7 +489,8 @@ public static partial class ScheduleExporter
             if (calendarEvent.IsRecurring && calendarEvent.LastDate is DateOnly last)
             {
                 var days = string.Join(',', calendarEvent.Weekdays.Select(day => WeekdayCodes[day]));
-                lines.Add($"RRULE:FREQ=WEEKLY;BYDAY={days};UNTIL={UntilStamp(last)}");
+                var until = isTimed ? UntilStamp(last) : DateStamp(last);
+                lines.Add($"RRULE:FREQ=WEEKLY;BYDAY={days};UNTIL={until}");
             }
             lines.Add("SUMMARY:" + Escape(calendarEvent.Title));
             if (calendarEvent.Location is not null) lines.Add("LOCATION:" + Escape(calendarEvent.Location));
@@ -648,8 +650,11 @@ public static partial class ScheduleExporter
     }
 
     private static string Escape(string text) =>
-        text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace(";", "\\;", StringComparison.Ordinal)
-            .Replace(",", "\\,", StringComparison.Ordinal).Replace("\r\n", "\\n", StringComparison.Ordinal)
+        text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal)
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace(";", "\\;", StringComparison.Ordinal)
+            .Replace(",", "\\,", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);
 
     private static string Fold(string line)

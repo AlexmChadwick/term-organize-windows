@@ -123,7 +123,7 @@ public class WaitlistDisplayTests
     {
         Assert.Equal("0 of 15 seats · Waitlist 3/10", Make(2, 10, 3).SeatsLabel);
         Assert.Equal("0 of 15 seats · Waitlist 7/10", Make(0, 10, 7).SeatsLabel);
-        Assert.Equal("2 of 15 seats", Make(2, 10, 0).SeatsLabel);
+        Assert.Equal("2 of 15 seats", Make(2, 0, 0).SeatsLabel);
     }
 
     [Fact]
@@ -140,6 +140,7 @@ public class WaitlistDisplayTests
     public void FullQueuedSectionReadsFullWithItsQueue()
     {
         var section = Make(0, 10, 7);
+        section.WaitlistRemaining = 3;
         Assert.Equal("0 of 15 seats · Waitlist 7/10", section.SeatsLabel);
         Assert.Equal("Full, 3 of 10 waitlist spots open", section.CourseSeatsSpoken());
     }

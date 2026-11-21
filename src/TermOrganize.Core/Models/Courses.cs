@@ -185,12 +185,6 @@ public sealed class CourseSection
     [JsonIgnore]
     public string? WaitlistLabel => WaitlistCapacity > 0 ? $"Waitlist {WaitlistCount}/{WaitlistCapacity}"
         : WaitlistCount > 0 ? $"Waitlist {WaitlistCount}" : null;
-    /// <summary>Full when no seats, Waitlist when seats are held for a queue, else Open.</summary>
-    [JsonIgnore] public string StatusLabel => SeatsRemaining <= 0 ? "Full" : IsWaitlisted ? "Waitlist" : "Open";
-
-    [JsonIgnore]
-    public double FillFraction => SeatCapacity <= 0 ? 1 : Math.Min(1, Math.Max(0, (double)(SeatCapacity - SeatsRemaining) / SeatCapacity));
-
     [JsonIgnore]
     public bool IsOnline =>
         Campus.Contains("online", StringComparison.OrdinalIgnoreCase) ||
@@ -232,7 +226,7 @@ public sealed class CourseSection
         }
     }
 
-    [JsonIgnore] public string SeatsLabel => $"{Math.Max(0, SeatsRemaining)} of {SeatCapacity} seats" + (WaitlistLabel is { } wait ? $" \u00b7 {wait}" : "");
+    [JsonIgnore] public string SeatsLabel => $"{OpenSeats} of {SeatCapacity} seats" + (WaitlistLabel is { } wait ? $" \u00b7 {wait}" : "");
 
     public bool ConflictsWith(CourseSection other)
     {

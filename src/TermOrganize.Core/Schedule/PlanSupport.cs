@@ -537,13 +537,6 @@ public static class ScheduleFormat
         return days;
     }
 
-    public static string SeatsText(CourseSection section)
-    {
-        if (section.IsOpen) return $"{section.OpenSeats} of {section.SeatCapacity} open";
-        if (section.SeatsRemaining > 0) return section.WaitlistLabel ?? "Waitlist";
-        return section.WaitlistLabel is { } wait ? $"Full · {wait}" : "Full";
-    }
-
     public static string FullLabel(CourseSection section) =>
         $"{section.CourseKey} · {SectionTitle(section)} · CRN {section.Crn}";
 }

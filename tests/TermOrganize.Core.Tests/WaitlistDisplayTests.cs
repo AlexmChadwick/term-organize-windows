@@ -119,11 +119,11 @@ public class WaitlistDisplayTests
     }
 
     [Fact]
-    public void StatusLabelIsFullWaitlistOrOpen()
+    public void SeatsLabelShowsZeroForAQueuedSection()
     {
-        Assert.Equal("Full", Make(0, 10, 7).StatusLabel);
-        Assert.Equal("Waitlist", Make(2, 10, 3).StatusLabel);
-        Assert.Equal("Open", Make(2, 10, 0).StatusLabel);
+        Assert.Equal("0 of 15 seats · Waitlist 3/10", Make(2, 10, 3).SeatsLabel);
+        Assert.Equal("0 of 15 seats · Waitlist 7/10", Make(0, 10, 7).SeatsLabel);
+        Assert.Equal("2 of 15 seats", Make(2, 10, 0).SeatsLabel);
     }
 
     [Fact]
@@ -131,13 +131,55 @@ public class WaitlistDisplayTests
     {
         foreach (var section in new[] { Make(2, 10, 3), Make(0, 10, 7), Make(2, 0, 3), Make(0, 0, 3) })
         {
-            foreach (var text in new[] { section.SeatsLabel, ScheduleFormat.SeatsText(section), section.CourseSeatsSpoken() })
+            foreach (var text in new[] { section.SeatsLabel, section.CourseSeatsSpoken() })
                 Assert.True(System.Text.RegularExpressions.Regex.Matches(text, "waitlist", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count <= 1, text);
         }
-        Assert.Equal("Waitlist 3/10", ScheduleFormat.SeatsText(Make(2, 10, 3)));
-        Assert.Equal("Full · Waitlist 7/10", ScheduleFormat.SeatsText(Make(0, 10, 7)));
-        Assert.Equal("2 of 15 open", ScheduleFormat.SeatsText(Make(2, 10, 0)));
-        Assert.Equal("Full", ScheduleFormat.SeatsText(Make(0, 0, 0)));
+    }
+
+    [Fact]
+    public void FullQueuedSectionReadsFullWithItsQueue()
+    {
+        var section = Make(0, 10, 7);
+        Assert.Equal("0 of 15 seats · Waitlist 7/10", section.SeatsLabel);
+        Assert.Equal("Full, 3 of 10 waitlist spots open", section.CourseSeatsSpoken());
+    }
+
+    [Fact]
+    public void SearchOpenSeatsOnlySkipsAQueuedSection()
+    {
+        Assert.False(new SearchFilters { OpenSeatsOnly = true }.Matches(Timed("Q", 2, 3)));
+        Assert.True(new SearchFilters { OpenSeatsOnly = true }.Matches(Timed("O", 2, 0)));
+    }
+
+    [Fact]
+    public void WatchOpenCountSkipsAQueuedWatch()
+    {
+        var outcome = new WatchlistComparison.Outcome
+        {
+            Items = [new WatchItem { LastSeatsRemaining = 2, LastWaitlistCount = 3 }, new WatchItem { LastSeatsRemaining = 2 }],
+            Alerts = [],
+            MissingIds = [],
+            CheckedTermCodes = [],
+        };
+        Assert.Equal(1, WatchlistService.OpenCount(outcome));
+    }
+
+    [Fact]
+    public void GeneratedScheduleSeatMeasuresIgnoreAQueue()
+    {
+        var schedule = new GeneratedSchedule([Timed("Q", 5, 3)]);
+        Assert.Equal(0, schedule.MinSeats);
+        Assert.Equal(0, schedule.TotalSeats);
+        Assert.Equal(1, schedule.FullSections);
+    }
+
+    [Fact]
+    public void MostSeatsSortRanksByOpenSeatsNotRawSeats()
+    {
+        var queued = Timed("Q", 9, 3);
+        var open = Timed("O", 3, 0);
+        var result = ScheduleGenerator.Generate([Input(queued, open)], new ScheduleFilters(), null, ScheduleSortOption.MostSeats);
+        Assert.Equal(["O", "Q"], result.Schedules.Select(schedule => schedule.Crns.Single()).ToArray());
     }
 
     [Fact]
@@ -145,9 +187,8 @@ public class WaitlistDisplayTests
     {
         var section = Make(2, 0, 3);
         Assert.Equal("Waitlist 3", section.WaitlistLabel);
-        Assert.Equal("2 of 15 seats · Waitlist 3", section.SeatsLabel);
+        Assert.Equal("0 of 15 seats · Waitlist 3", section.SeatsLabel);
         Assert.False(section.IsOpen);
-        Assert.Equal("Waitlist 3", ScheduleFormat.SeatsText(section));
         Assert.Equal("Waitlist, 3 waiting", section.CourseSeatsSpoken());
         Assert.Equal("Full, 3 waiting", Make(0, 0, 3).CourseSeatsSpoken());
     }

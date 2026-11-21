@@ -580,7 +580,7 @@ internal sealed class ProfessorWindow : Window
                 section.Meetings.FirstOrDefault()?.LocationLabel ?? "\u2014",
                 section.SeatsLabel,
             ],
-            Sort = [null, null, null, null, section.WeeklyMeetings.Select(meeting => meeting.Start ?? 24 * 60).DefaultIfEmpty(24 * 60).Min(), null, section.SeatsRemaining],
+            Sort = [null, null, null, null, section.WeeklyMeetings.Select(meeting => meeting.Start ?? 24 * 60).DefaultIfEmpty(24 * 60).Min(), null, section.OpenSeats],
         }).ToList();
         table.Show(
         [

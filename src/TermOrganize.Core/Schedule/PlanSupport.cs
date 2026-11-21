@@ -539,9 +539,9 @@ public static class ScheduleFormat
 
     public static string SeatsText(CourseSection section)
     {
-        if (section.IsOpen) return $"{section.SeatsRemaining} of {section.SeatCapacity} open";
-        if (section.WaitlistCapacity > 0) return $"{(section.SeatsRemaining > 0 ? "Waitlist" : "Full")} · {section.WaitlistLabel}";
-        return "Full";
+        if (section.IsOpen) return $"{section.OpenSeats} of {section.SeatCapacity} open";
+        if (section.SeatsRemaining > 0) return section.WaitlistLabel ?? "Waitlist";
+        return section.WaitlistLabel is { } wait ? $"Full · {wait}" : "Full";
     }
 
     public static string FullLabel(CourseSection section) =>

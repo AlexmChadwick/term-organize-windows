@@ -118,6 +118,7 @@ public sealed class WatchItem
     public int LastSeatsRemaining { get; set; }
     public int LastWaitlistRemaining { get; set; }
     public int LastWaitlistCount { get; set; }
+    [JsonIgnore] public int OpenSeats => LastWaitlistCount > 0 ? 0 : Math.Max(0, LastSeatsRemaining);
     public int SeatCapacity { get; set; }
     public DateTimeOffset? LastCheckedAt { get; set; }
     public bool NotifyOnWaitlist { get; set; }

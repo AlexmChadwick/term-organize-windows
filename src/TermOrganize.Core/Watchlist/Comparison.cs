@@ -114,8 +114,7 @@ public static class WatchlistComparison
                 item.LastCheckedAt = moment;
                 continue;
             }
-            var wasOpen = item.LastSeatsRemaining > 0 && item.LastWaitlistCount <= 0;
-            var seatsOpened = !wasOpen && section.IsOpen;
+            var seatsOpened = item.OpenSeats <= 0 && section.IsOpen;
             var waitlistOpened = item.NotifyOnWaitlist
                 && !seatsOpened
                 && !section.IsOpen
@@ -137,7 +136,7 @@ public static class WatchlistComparison
                     CourseKey = item.CourseKey,
                     CourseTitle = item.CourseTitle,
                     SectionName = SectionName(section),
-                    SeatsRemaining = section.SeatsRemaining,
+                    SeatsRemaining = section.OpenSeats,
                     SeatCapacity = section.SeatCapacity,
                     WaitlistRemaining = section.WaitlistRemaining,
                 });

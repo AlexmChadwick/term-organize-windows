@@ -187,7 +187,7 @@ public sealed class GeneratedSchedule : IEquatable<GeneratedSchedule>
             var own = ScheduleInterval.IntervalsFor(section, buildings);
             intervals.AddRange(own);
             if (hasPreferences) points += SchedulePreferenceRules.SectionScore(section, own, preferences);
-            var seats = Math.Max(0, section.SeatsRemaining);
+            var seats = section.OpenSeats;
             minSeats = Math.Min(minSeats, seats);
             totalSeats += seats;
             if (seats == 0) full++;
@@ -567,7 +567,7 @@ public static partial class ScheduleGenerator
         if (!filters.IncludeHonors && section.Honors) reasons |= ScheduleFilterReason.Honors.Bit();
         if (!filters.IncludeOnline && section.IsOnline) reasons |= ScheduleFilterReason.Online.Bit();
         if (filters.HideFullSections && !section.IsOpen) reasons |= ScheduleFilterReason.Seats.Bit();
-        if (filters.MinSeats > 0 && section.SeatsRemaining < filters.MinSeats) reasons |= ScheduleFilterReason.Seats.Bit();
+        if (filters.MinSeats > 0 && section.OpenSeats < filters.MinSeats) reasons |= ScheduleFilterReason.Seats.Bit();
         if (filters.Campus is string campus && !section.IsOnline && !HasNoCampus(section) && section.Campus != campus)
             reasons |= ScheduleFilterReason.Campus.Bit();
         if (!preferences.IsDefault)
@@ -816,7 +816,7 @@ public static partial class ScheduleGenerator
             slots.Select(s => s.Start).ToArray(),
             intervalStart.ToArray(),
             intervals.ToArray(),
-            sections.Select(s => Math.Max(0, s.SeatsRemaining)).ToArray(),
+            sections.Select(s => s.OpenSeats).ToArray(),
             sectionPoints.ToArray(),
             new ScheduleScoring.Weights(preferences),
             ScheduleScoring.MeasureOptions(preferences));

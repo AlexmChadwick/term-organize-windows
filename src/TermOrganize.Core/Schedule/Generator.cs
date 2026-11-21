@@ -566,7 +566,7 @@ public static partial class ScheduleGenerator
             reasons |= ScheduleFilterReason.FreeDay.Bit();
         if (!filters.IncludeHonors && section.Honors) reasons |= ScheduleFilterReason.Honors.Bit();
         if (!filters.IncludeOnline && section.IsOnline) reasons |= ScheduleFilterReason.Online.Bit();
-        if (filters.HideFullSections && section.SeatsRemaining <= 0) reasons |= ScheduleFilterReason.Seats.Bit();
+        if (filters.HideFullSections && !section.IsOpen) reasons |= ScheduleFilterReason.Seats.Bit();
         if (filters.MinSeats > 0 && section.SeatsRemaining < filters.MinSeats) reasons |= ScheduleFilterReason.Seats.Bit();
         if (filters.Campus is string campus && !section.IsOnline && !HasNoCampus(section) && section.Campus != campus)
             reasons |= ScheduleFilterReason.Campus.Bit();

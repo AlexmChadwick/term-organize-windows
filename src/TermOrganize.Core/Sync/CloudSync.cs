@@ -424,6 +424,7 @@ public static class CloudSyncCoding
         var copy = CloudSyncClone.Copy(item);
         copy.LastSeatsRemaining = 0;
         copy.LastWaitlistRemaining = 0;
+        copy.LastWaitlistCount = 0;
         copy.SeatCapacity = 0;
         copy.LastCheckedAt = null;
         copy.LastNotifiedAt = null;
@@ -935,6 +936,7 @@ public static class CloudSyncMerge
         {
             item.LastSeatsRemaining = local.Item.LastSeatsRemaining;
             item.LastWaitlistRemaining = local.Item.LastWaitlistRemaining;
+            item.LastWaitlistCount = local.Item.LastWaitlistCount;
             item.SeatCapacity = local.Item.SeatCapacity;
             item.LastCheckedAt = local.Item.LastCheckedAt;
             item.LastNotifiedAt = local.Item.LastNotifiedAt;

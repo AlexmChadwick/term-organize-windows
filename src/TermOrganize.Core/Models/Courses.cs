@@ -175,9 +175,13 @@ public sealed class CourseSection
 
     [JsonIgnore] public string Id => Crn;
     [JsonIgnore] public CourseKey CourseKey => new(Subject, Number);
-    [JsonIgnore] public bool IsOpen => SeatsRemaining > 0;
+    /// <summary>Freed seats go to the waitlist first, so a section with a waitlist line is not open.</summary>
+    [JsonIgnore] public bool IsOpen => SeatsRemaining > 0 && WaitlistCount <= 0;
     [JsonIgnore] public bool HasWaitlist => WaitlistCapacity > 0;
-    [JsonIgnore] public bool IsFull => SeatsRemaining <= 0;
+    [JsonIgnore] public bool IsWaitlisted => WaitlistCount > 0;
+    [JsonIgnore] public bool IsFull => !IsOpen;
+    /// <summary>For example Waitlist 7/10, or null when the section has no waitlist.</summary>
+    [JsonIgnore] public string? WaitlistLabel => HasWaitlist ? $"Waitlist {WaitlistCount}/{WaitlistCapacity}" : null;
 
     [JsonIgnore]
     public double FillFraction => SeatCapacity <= 0 ? 1 : Math.Min(1, Math.Max(0, (double)(SeatCapacity - SeatsRemaining) / SeatCapacity));
@@ -223,7 +227,7 @@ public sealed class CourseSection
         }
     }
 
-    [JsonIgnore] public string SeatsLabel => $"{Math.Max(0, SeatsRemaining)} of {SeatCapacity} seats";
+    [JsonIgnore] public string SeatsLabel => $"{Math.Max(0, SeatsRemaining)} of {SeatCapacity} seats" + (WaitlistLabel is { } wait ? $" \u00b7 {wait}" : "");
 
     public bool ConflictsWith(CourseSection other)
     {

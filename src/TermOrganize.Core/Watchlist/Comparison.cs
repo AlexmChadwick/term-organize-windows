@@ -114,14 +114,16 @@ public static class WatchlistComparison
                 item.LastCheckedAt = moment;
                 continue;
             }
-            var seatsOpened = item.LastSeatsRemaining <= 0 && section.SeatsRemaining > 0;
+            var wasOpen = item.LastSeatsRemaining > 0 && item.LastWaitlistCount <= 0;
+            var seatsOpened = !wasOpen && section.IsOpen;
             var waitlistOpened = item.NotifyOnWaitlist
                 && !seatsOpened
-                && section.SeatsRemaining <= 0
+                && !section.IsOpen
                 && item.LastWaitlistRemaining <= 0
                 && section.WaitlistRemaining > 0;
             item.LastSeatsRemaining = section.SeatsRemaining;
             item.LastWaitlistRemaining = section.WaitlistRemaining;
+            item.LastWaitlistCount = section.WaitlistCount;
             item.SeatCapacity = section.SeatCapacity;
             item.LastCheckedAt = moment;
             if (seatsOpened || waitlistOpened)
@@ -167,6 +169,7 @@ public static class WatchlistComparison
         AddedAt = item.AddedAt,
         LastSeatsRemaining = item.LastSeatsRemaining,
         LastWaitlistRemaining = item.LastWaitlistRemaining,
+        LastWaitlistCount = item.LastWaitlistCount,
         SeatCapacity = item.SeatCapacity,
         LastCheckedAt = item.LastCheckedAt,
         NotifyOnWaitlist = item.NotifyOnWaitlist,

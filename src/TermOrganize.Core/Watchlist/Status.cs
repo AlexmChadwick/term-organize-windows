@@ -18,8 +18,8 @@ public static class WatchlistStatusInfo
     public static WatchlistStatus For(WatchItem item, bool isMissing)
     {
         if (isMissing) return WatchlistStatus.Missing;
-        if (item.LastSeatsRemaining > 0) return WatchlistStatus.Open;
-        if (item.LastWaitlistRemaining > 0) return WatchlistStatus.Waitlist;
+        if (item.LastSeatsRemaining > 0 && item.LastWaitlistCount <= 0) return WatchlistStatus.Open;
+        if (item.LastSeatsRemaining > 0 || item.LastWaitlistRemaining > 0) return WatchlistStatus.Waitlist;
         return WatchlistStatus.Full;
     }
 
@@ -47,7 +47,7 @@ public static class WatchlistStatusInfo
         WatchlistStatus.Open => item.SeatCapacity > 0
             ? $"{item.LastSeatsRemaining} of {item.SeatCapacity} open"
             : $"{item.LastSeatsRemaining} open",
-        WatchlistStatus.Waitlist => $"Full · {item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
+        WatchlistStatus.Waitlist => $"{(item.LastSeatsRemaining > 0 ? "Waitlist" : "Full")} · {item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
         WatchlistStatus.Full => "Full",
         WatchlistStatus.Missing => "No longer listed",
         _ => "",

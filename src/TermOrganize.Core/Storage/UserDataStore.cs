@@ -281,6 +281,7 @@ public sealed class UserDataStore
             SectionLabel = $"{section.ClassType} · Section {section.SectionNumber}",
             LastSeatsRemaining = section.SeatsRemaining,
             LastWaitlistRemaining = section.WaitlistRemaining,
+            LastWaitlistCount = section.WaitlistCount,
             SeatCapacity = section.SeatCapacity,
             LastCheckedAt = DateTimeOffset.UtcNow,
         });

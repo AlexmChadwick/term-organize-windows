@@ -90,7 +90,7 @@ public static class SchedulePreferenceRules
     }
 
     /// <summary>A section with a seat limit and no seats left. Sections without a limit are never full.</summary>
-    public static bool IsFull(CourseSection section) => section.SeatCapacity > 0 && section.SeatsRemaining <= 0;
+    public static bool IsFull(CourseSection section) => section.SeatCapacity > 0 && !section.IsOpen;
 
     /// <summary>
     /// In-person meetings in different (or unknown) buildings, same weeks, with fewer than <paramref name="minutes"/> between them.

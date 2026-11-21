@@ -438,7 +438,7 @@ internal static class CourseDetail
             TextWrapping = TextWrapping.Wrap,
         });
         panel.Children.Add(Chrome.Body($"{section.ScheduleSummary} \u00b7 {section.InstructorLabel} \u00b7 {section.Campus}"));
-        panel.Children.Add(Chrome.Body($"{section.SeatsLabel}" + (section.HasWaitlist ? $" \u00b7 waitlist {section.WaitlistRemaining}" : "")));
+        panel.Children.Add(Chrome.Body(section.SeatsLabel));
         if (section.CpsOnly == true)
             panel.Children.Add(Chrome.Caption(CpsNotes.Restricted));
         var watch = new Button { Content = session.Store.IsWatching(section.Crn, term) ? "Watching" : "Watch seats", HorizontalAlignment = HorizontalAlignment.Left };
@@ -580,7 +580,7 @@ internal sealed class ProfessorWindow : Window
                 section.Meetings.FirstOrDefault()?.LocationLabel ?? "\u2014",
                 section.SeatsLabel,
             ],
-            Sort = [null, null, null, null, section.WeeklyMeetings.Select(meeting => meeting.Start ?? 24 * 60).DefaultIfEmpty(24 * 60).Min(), null, section.SeatsRemaining],
+            Sort = [null, null, null, null, section.WeeklyMeetings.Select(meeting => meeting.Start ?? 24 * 60).DefaultIfEmpty(24 * 60).Min(), null, section.OpenSeats],
         }).ToList();
         table.Show(
         [

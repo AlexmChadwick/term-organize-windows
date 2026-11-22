@@ -112,6 +112,7 @@ public static class CloudSync
                 }
                 copy.LastSeatsRemaining = current.LastSeatsRemaining;
                 copy.LastWaitlistRemaining = current.LastWaitlistRemaining;
+                copy.LastWaitlistCount = current.LastWaitlistCount;
                 copy.SeatCapacity = current.SeatCapacity;
                 copy.LastCheckedAt = current.LastCheckedAt;
                 copy.LastNotifiedAt = current.LastNotifiedAt;
@@ -120,6 +121,7 @@ public static class CloudSync
             {
                 copy.LastSeatsRemaining = 0;
                 copy.LastWaitlistRemaining = 0;
+                copy.LastWaitlistCount = 0;
                 copy.SeatCapacity = 0;
                 copy.LastCheckedAt = null;
                 copy.LastNotifiedAt = null;

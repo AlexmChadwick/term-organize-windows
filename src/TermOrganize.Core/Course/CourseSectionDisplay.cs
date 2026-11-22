@@ -90,9 +90,14 @@ public static class CourseSectionDisplay
     public static string CourseSeatsSpoken(this CourseSection section)
     {
         if (section.SeatCapacity <= 0 && section.SeatsRemaining <= 0) return "No seat limit listed";
-        if (section.SeatsRemaining > 0) return $"{section.SeatsRemaining} of {section.SeatCapacity} seats open";
+        if (section.IsWaitlisted && section.SeatsRemaining > 0)
+            return section.WaitlistCapacity > 0
+                ? $"Waitlist, {section.WaitlistCount} of {section.WaitlistCapacity} spots taken"
+                : $"Waitlist, {section.WaitlistCount} waiting";
+        if (section.IsOpen) return $"{section.OpenSeats} of {section.SeatCapacity} seats open";
         if (section.WaitlistCapacity > 0)
             return $"Full, {section.WaitlistRemaining} of {section.WaitlistCapacity} waitlist spots open";
+        if (section.IsWaitlisted) return $"Full, {section.WaitlistCount} waiting";
         return "Full";
     }
 }

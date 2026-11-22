@@ -18,8 +18,8 @@ public static class WatchlistStatusInfo
     public static WatchlistStatus For(WatchItem item, bool isMissing)
     {
         if (isMissing) return WatchlistStatus.Missing;
-        if (item.LastSeatsRemaining > 0) return WatchlistStatus.Open;
-        if (item.LastWaitlistRemaining > 0) return WatchlistStatus.Waitlist;
+        if (item.OpenSeats > 0) return WatchlistStatus.Open;
+        if (item.LastSeatsRemaining > 0 || item.LastWaitlistRemaining > 0) return WatchlistStatus.Waitlist;
         return WatchlistStatus.Full;
     }
 
@@ -45,9 +45,9 @@ public static class WatchlistStatusInfo
     public static string Detail(this WatchlistStatus status, WatchItem item) => status switch
     {
         WatchlistStatus.Open => item.SeatCapacity > 0
-            ? $"{item.LastSeatsRemaining} of {item.SeatCapacity} open"
-            : $"{item.LastSeatsRemaining} open",
-        WatchlistStatus.Waitlist => $"Full · {item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
+            ? $"{item.OpenSeats} of {item.SeatCapacity} open"
+            : $"{item.OpenSeats} open",
+        WatchlistStatus.Waitlist => $"{(item.LastSeatsRemaining > 0 ? "" : "Full · ")}{item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
         WatchlistStatus.Full => "Full",
         WatchlistStatus.Missing => "No longer listed",
         _ => "",
@@ -57,7 +57,7 @@ public static class WatchlistStatusInfo
     public static string SpokenDetail(this WatchlistStatus status, WatchItem item)
     {
         if (status != WatchlistStatus.Open) return status.Detail(item);
-        var seats = item.LastSeatsRemaining;
+        var seats = item.OpenSeats;
         return item.SeatCapacity > 0
             ? $"{seats} of {item.SeatCapacity} seats open"
             : $"{seats} {(seats == 1 ? "seat" : "seats")} open";

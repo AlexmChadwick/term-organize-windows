@@ -351,7 +351,7 @@ public sealed class CatalogIndex
         {
             stats.SectionCount++;
             if (section.IsOpen) stats.OpenSectionCount++;
-            stats.SeatsRemaining += Math.Max(0, section.SeatsRemaining);
+            stats.SeatsRemaining += section.OpenSeats;
             stats.SeatCapacity += section.SeatCapacity;
             if (section.WaitlistRemaining > 0) stats.WaitlistOpenCount++;
             if (section.Campus.Length > 0) stats.Campuses.Add(section.Campus);

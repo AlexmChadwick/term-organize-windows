@@ -67,6 +67,7 @@ public sealed class WatchlistService
             if (savedCheck <= (item.LastCheckedAt ?? DateTimeOffset.MinValue)) continue;
             item.LastSeatsRemaining = newer.LastSeatsRemaining;
             item.LastWaitlistRemaining = newer.LastWaitlistRemaining;
+            item.LastWaitlistCount = newer.LastWaitlistCount;
             item.SeatCapacity = newer.SeatCapacity;
             item.LastCheckedAt = newer.LastCheckedAt;
             item.LastNotifiedAt = newer.LastNotifiedAt;
@@ -192,9 +193,11 @@ public sealed class WatchlistService
     private void Post(WatchlistComparison.Outcome outcome)
     {
         if (Notifier is not { IsAuthorized: true } || outcome.Alerts.Count == 0) return;
-        var openCount = outcome.Items.Count(item => item.LastSeatsRemaining > 0);
-        Notifier.Post(WatchlistNotifications.Content(outcome.Alerts, openCount));
+        Notifier.Post(WatchlistNotifications.Content(outcome.Alerts, OpenCount(outcome)));
     }
+
+    /// <summary>Watched sections with open seats; a queued section is not open.</summary>
+    public static int OpenCount(WatchlistComparison.Outcome outcome) => outcome.Items.Count(item => item.OpenSeats > 0);
 
     private async Task<Dictionary<string, IReadOnlyDictionary<CourseKey, IReadOnlyList<CourseSection>>>> FetchLiveAsync(
         IReadOnlyList<WatchItem> items,

@@ -16,7 +16,10 @@ public static class SectionJson
         ["location"] = Location(section),
         ["instructors"] = InstructorRows(section),
         ["seats_remaining"] = section.SeatsRemaining,
+        ["open_seats"] = section.OpenSeats,
         ["seat_capacity"] = section.SeatCapacity,
+        ["waitlist_count"] = section.WaitlistCount,
+        ["waitlist_capacity"] = section.WaitlistCapacity,
         ["cps_only"] = section.CpsOnly,
     };
 

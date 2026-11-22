@@ -134,7 +134,7 @@ public sealed class WatchPage : UserControl
             Sort =
             [
                 null, null, null, null, null, null,
-                rank * 100_000 + Math.Max(0, item.LastSeatsRemaining),
+                rank * 100_000 + item.OpenSeats,
                 item.LastCheckedAt is DateTimeOffset checkedAt ? (double)checkedAt.ToUnixTimeSeconds() : null,
                 item.LastNotifiedAt is DateTimeOffset opened ? (double)opened.ToUnixTimeSeconds() : 0,
                 item.NotifyOnWaitlist ? 1 : 0,

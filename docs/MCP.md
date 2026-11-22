@@ -179,12 +179,17 @@ No arguments.
       "location": "SN 108",
       "instructors": [{ "name": "Ada Lovelace", "email": "lovelace@northeastern.edu" }],
       "seats_remaining": 3,
+      "open_seats": 3,
       "seat_capacity": 40,
+      "waitlist_count": 0,
+      "waitlist_capacity": 0,
       "cps_only": null
     }
   ]
 }
 ```
+
+`open_seats` is 0 while anyone is on the waitlist (`waitlist_count` above 0), because freed seats go to the waitlist first; treat a section as open only when it is above 0. `seats_remaining` is the raw Banner count.
 
 ### check_schedule
 

@@ -86,6 +86,13 @@ public static class CourseSectionDisplay
         return string.IsNullOrEmpty(text) ? null : text;
     }
 
+    /// <summary>Accessible name Narrator reads for the seat line.</summary>
+    public static string CourseSeatsNarratorName(this CourseSection section) => section.CourseSeatsSpoken();
+
+    /// <summary>Earliest weekly meeting start, in minutes. A section with no weekly time sorts at the end of the day.</summary>
+    public static int CourseMeetingSortMinutes(this CourseSection section) =>
+        section.WeeklyMeetings.Select(meeting => meeting.Start ?? 24 * 60).DefaultIfEmpty(24 * 60).Min();
+
     /// <summary>Spoken seat summary, e.g. 12 of 40 seats open.</summary>
     public static string CourseSeatsSpoken(this CourseSection section)
     {

@@ -325,4 +325,46 @@ public class WaitlistDisplayTests
         Assert.Single(resolved.FullSections);
         Assert.Equal(["1 full section"], resolved.Warnings().Select(w => w.Text).ToArray());
     }
+
+    [Fact]
+    public void NarratorReadsTheSpokenSeatLine()
+    {
+        var open = Make(2, 0, 0);
+        Assert.Equal("2 of 15 seats open", open.CourseSeatsNarratorName());
+        Assert.Equal("Full", Make(0, 0, 0).CourseSeatsNarratorName());
+        Assert.Equal("Waitlist, 3 of 10 spots taken", Make(2, 10, 3).CourseSeatsNarratorName());
+        var queued = Make(0, 10, 7);
+        queued.WaitlistRemaining = 3;
+        Assert.Equal("Full, 3 of 10 waitlist spots open", queued.CourseSeatsNarratorName());
+    }
+
+    [Fact]
+    public void MeetingSortUsesTheEarliestWeeklyStart()
+    {
+        Assert.Equal(600, Timed("A", 2, 0).CourseMeetingSortMinutes());
+        var early = Timed("B", 2, 0);
+        early.Meetings.Add(new Meeting { Days = DaySet.FromIndices([2]), Start = 480, End = 540, Kind = "Class" });
+        Assert.Equal(480, early.CourseMeetingSortMinutes());
+        var finalsOnly = Make(2, 0, 0);
+        finalsOnly.Meetings = [new Meeting { Days = DaySet.FromIndices([2]), Start = 400, End = 500, Kind = "Final Exam" }];
+        Assert.Equal(24 * 60, finalsOnly.CourseMeetingSortMinutes());
+        Assert.Equal(24 * 60, Make(2, 0, 0).CourseMeetingSortMinutes());
+    }
+
+    [Fact]
+    public void WatchSeatSortRanksOpenAboveAQueue()
+    {
+        var open = new WatchItem { LastSeatsRemaining = 4, SeatCapacity = 15 };
+        var more = new WatchItem { LastSeatsRemaining = 9, SeatCapacity = 15 };
+        var queued = new WatchItem { LastSeatsRemaining = 9, LastWaitlistCount = 3, LastWaitlistRemaining = 2, SeatCapacity = 15 };
+        var full = new WatchItem { SeatCapacity = 15 };
+        var missing = new WatchItem { LastSeatsRemaining = 4, SeatCapacity = 15 };
+        Assert.Equal(300_004, WatchlistStatus.Open.SeatSortKey(open));
+        Assert.True(WatchlistStatus.Open.SeatSortKey(more) > WatchlistStatus.Open.SeatSortKey(open));
+        Assert.Equal(200_000, WatchlistStatusInfo.For(queued, false).SeatSortKey(queued));
+        Assert.Equal(100_000, WatchlistStatus.Full.SeatSortKey(full));
+        Assert.Equal(4, WatchlistStatus.Missing.SeatSortKey(missing));
+        Assert.True(WatchlistStatus.Open.SeatSortKey(open) > WatchlistStatusInfo.For(queued, false).SeatSortKey(queued));
+        Assert.True(WatchlistStatusInfo.For(queued, false).SeatSortKey(queued) > WatchlistStatus.Full.SeatSortKey(full));
+    }
 }

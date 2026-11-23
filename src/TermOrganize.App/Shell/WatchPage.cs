@@ -107,13 +107,6 @@ public sealed class WatchPage : UserControl
         var status = WatchlistStatusInfo.For(item, loaded && section is null);
         var term = _session.KnownTerms.FirstOrDefault(candidate => candidate.Code == item.TermCode)?.Name
             ?? (_session.Term?.Code == item.TermCode ? _session.Term.Name : item.TermCode);
-        var rank = status switch
-        {
-            WatchlistStatus.Open => 3,
-            WatchlistStatus.Waitlist => 2,
-            WatchlistStatus.Full => 1,
-            _ => 0,
-        };
         return new SortableTable.Row
         {
             Tag = item,
@@ -134,7 +127,7 @@ public sealed class WatchPage : UserControl
             Sort =
             [
                 null, null, null, null, null, null,
-                rank * 100_000 + item.OpenSeats,
+                status.SeatSortKey(item),
                 item.LastCheckedAt is DateTimeOffset checkedAt ? (double)checkedAt.ToUnixTimeSeconds() : null,
                 item.LastNotifiedAt is DateTimeOffset opened ? (double)opened.ToUnixTimeSeconds() : 0,
                 item.NotifyOnWaitlist ? 1 : 0,

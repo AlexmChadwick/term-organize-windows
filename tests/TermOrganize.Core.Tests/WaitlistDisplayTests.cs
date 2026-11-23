@@ -119,6 +119,14 @@ public class WaitlistDisplayTests
     }
 
     [Fact]
+    public void WaitlistLabelClampsANegativeCount()
+    {
+        Assert.Equal("Waitlist 0/10", Make(2, 10, -4).WaitlistLabel);
+        Assert.Null(Make(2, 0, -4).WaitlistLabel);
+        Assert.Equal("Waitlist 3/10", Make(2, 10, 3).WaitlistLabel);
+    }
+
+    [Fact]
     public void SeatsLabelShowsZeroForAQueuedSection()
     {
         Assert.Equal("0 of 15 open · Waitlist 3/10", Make(2, 10, 3).SeatsLabel);
@@ -286,6 +294,18 @@ public class WaitlistDisplayTests
         var status = WatchlistStatusInfo.For(item, false);
         Assert.Equal("7 waitlist spots open", status.Detail(item));
         Assert.Equal("7 waitlist spots open", status.SpokenDetail(item));
+    }
+
+    [Fact]
+    public void AClosedWaitlistReadsWaitlistFull()
+    {
+        var item = new WatchItem { LastSeatsRemaining = 2, LastWaitlistCount = 3, LastWaitlistRemaining = 0, SeatCapacity = 15 };
+        var status = WatchlistStatusInfo.For(item, false);
+        Assert.Equal(WatchlistStatus.Waitlist, status);
+        Assert.Equal("Waitlist full", status.Detail(item));
+        Assert.Equal("Waitlist full", status.SpokenDetail(item));
+        item.LastWaitlistRemaining = -2;
+        Assert.Equal("Waitlist full", WatchlistStatus.Waitlist.Detail(item));
     }
 
     [Fact]

@@ -47,7 +47,9 @@ public static class WatchlistStatusInfo
         WatchlistStatus.Open => item.SeatCapacity > 0
             ? $"{item.OpenSeats} of {item.SeatCapacity} open"
             : $"{item.OpenSeats} open",
-        WatchlistStatus.Waitlist => $"{(item.LastSeatsRemaining > 0 ? "" : "Full · ")}{item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
+        WatchlistStatus.Waitlist => item.LastWaitlistRemaining <= 0
+            ? "Waitlist full"
+            : $"{(item.LastSeatsRemaining > 0 ? "" : "Full · ")}{item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
         WatchlistStatus.Full => "Full",
         WatchlistStatus.Missing => "No longer listed",
         _ => "",

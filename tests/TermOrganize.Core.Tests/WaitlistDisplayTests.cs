@@ -26,7 +26,7 @@ public class WaitlistDisplayTests
     {
         var section = Make(0, 0, 0);
         Assert.Null(section.WaitlistLabel);
-        Assert.Equal("0 of 15 seats", section.SeatsLabel);
+        Assert.Equal("Full", section.SeatsLabel);
         Assert.Equal("Full", section.CourseSeatsSpoken());
         Assert.False(section.IsOpen);
     }
@@ -36,7 +36,7 @@ public class WaitlistDisplayTests
     {
         var section = Make(0, 10, 7);
         Assert.Equal("Waitlist 7/10", section.WaitlistLabel);
-        Assert.Equal("0 of 15 seats · Waitlist 7/10", section.SeatsLabel);
+        Assert.Equal("Full · Waitlist 7/10", section.SeatsLabel);
         Assert.False(section.IsOpen);
     }
 
@@ -121,9 +121,9 @@ public class WaitlistDisplayTests
     [Fact]
     public void SeatsLabelShowsZeroForAQueuedSection()
     {
-        Assert.Equal("0 of 15 seats · Waitlist 3/10", Make(2, 10, 3).SeatsLabel);
-        Assert.Equal("0 of 15 seats · Waitlist 7/10", Make(0, 10, 7).SeatsLabel);
-        Assert.Equal("2 of 15 seats", Make(2, 0, 0).SeatsLabel);
+        Assert.Equal("0 of 15 open · Waitlist 3/10", Make(2, 10, 3).SeatsLabel);
+        Assert.Equal("Full · Waitlist 7/10", Make(0, 10, 7).SeatsLabel);
+        Assert.Equal("2 of 15 open", Make(2, 0, 0).SeatsLabel);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class WaitlistDisplayTests
     {
         var section = Make(0, 10, 7);
         section.WaitlistRemaining = 3;
-        Assert.Equal("0 of 15 seats · Waitlist 7/10", section.SeatsLabel);
+        Assert.Equal("Full · Waitlist 7/10", section.SeatsLabel);
         Assert.Equal("Full, 3 of 10 waitlist spots open", section.CourseSeatsSpoken());
     }
 
@@ -188,7 +188,7 @@ public class WaitlistDisplayTests
     {
         var section = Make(2, 0, 3);
         Assert.Equal("Waitlist 3", section.WaitlistLabel);
-        Assert.Equal("0 of 15 seats · Waitlist 3", section.SeatsLabel);
+        Assert.Equal("0 of 15 open · Waitlist 3", section.SeatsLabel);
         Assert.False(section.IsOpen);
         Assert.Equal("Waitlist, 3 waiting", section.CourseSeatsSpoken());
         Assert.Equal("Full, 3 waiting", Make(0, 0, 3).CourseSeatsSpoken());

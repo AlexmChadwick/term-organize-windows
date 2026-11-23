@@ -226,7 +226,16 @@ public sealed class CourseSection
         }
     }
 
-    [JsonIgnore] public string SeatsLabel => $"{OpenSeats} of {SeatCapacity} seats" + (WaitlistLabel is { } wait ? $" \u00b7 {wait}" : "");
+    /// <summary>"Full" when no seats remain and a capacity is listed, otherwise "N of M open" (0 while anyone is waiting). A waitlist fact is appended.</summary>
+    [JsonIgnore]
+    public string SeatsLabel
+    {
+        get
+        {
+            var seats = SeatsRemaining <= 0 && SeatCapacity > 0 ? "Full" : $"{OpenSeats} of {SeatCapacity} open";
+            return WaitlistLabel is { } wait ? $"{seats} \u00b7 {wait}" : seats;
+        }
+    }
 
     public bool ConflictsWith(CourseSection other)
     {

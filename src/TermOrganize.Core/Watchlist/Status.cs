@@ -47,11 +47,29 @@ public static class WatchlistStatusInfo
         WatchlistStatus.Open => item.SeatCapacity > 0
             ? $"{item.OpenSeats} of {item.SeatCapacity} open"
             : $"{item.OpenSeats} open",
-        WatchlistStatus.Waitlist => $"{(item.LastSeatsRemaining > 0 ? "" : "Full · ")}{item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
+        WatchlistStatus.Waitlist => item.LastWaitlistRemaining <= 0
+            ? "Waitlist full"
+            : $"{(item.LastSeatsRemaining > 0 ? "" : "Full · ")}{item.LastWaitlistRemaining} waitlist {(item.LastWaitlistRemaining == 1 ? "spot" : "spots")} open",
         WatchlistStatus.Full => "Full",
         WatchlistStatus.Missing => "No longer listed",
         _ => "",
     };
+
+    /// <summary>
+    /// Numeric seat-column key. Open is 300000, waitlist 200000, full 100000, and missing 0, plus the open-seat count.
+    /// </summary>
+    public static int SeatSortKey(this WatchlistStatus status, WatchItem item)
+    {
+        var rank = status switch
+        {
+            WatchlistStatus.Open => 3,
+            WatchlistStatus.Waitlist => 2,
+            WatchlistStatus.Full => 1,
+            WatchlistStatus.Missing => 0,
+            _ => 0,
+        };
+        return rank * 100_000 + item.OpenSeats;
+    }
 
     /// <summary>The same numbers phrased to be read aloud: 3 of 40 seats open.</summary>
     public static string SpokenDetail(this WatchlistStatus status, WatchItem item)

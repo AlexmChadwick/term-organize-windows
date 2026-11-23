@@ -181,10 +181,17 @@ public sealed class CourseSection
     [JsonIgnore] public bool HasWaitlist => WaitlistCapacity > 0 || WaitlistCount > 0;
     [JsonIgnore] public bool IsWaitlisted => WaitlistCount > 0;
     [JsonIgnore] public bool IsFull => !IsOpen;
-    /// <summary>For example Waitlist 7/10, Waitlist 7 when the capacity is 0, or null when the section has no waitlist.</summary>
+    /// <summary>For example Waitlist 7/10, Waitlist 7 when the capacity is 0, or null when the section has no waitlist. A negative count is shown as 0.</summary>
     [JsonIgnore]
-    public string? WaitlistLabel => WaitlistCapacity > 0 ? $"Waitlist {WaitlistCount}/{WaitlistCapacity}"
-        : WaitlistCount > 0 ? $"Waitlist {WaitlistCount}" : null;
+    public string? WaitlistLabel
+    {
+        get
+        {
+            var count = Math.Max(0, WaitlistCount);
+            return WaitlistCapacity > 0 ? $"Waitlist {count}/{WaitlistCapacity}"
+                : count > 0 ? $"Waitlist {count}" : null;
+        }
+    }
     [JsonIgnore]
     public bool IsOnline =>
         Campus.Contains("online", StringComparison.OrdinalIgnoreCase) ||
@@ -226,7 +233,16 @@ public sealed class CourseSection
         }
     }
 
-    [JsonIgnore] public string SeatsLabel => $"{OpenSeats} of {SeatCapacity} seats" + (WaitlistLabel is { } wait ? $" \u00b7 {wait}" : "");
+    /// <summary>"Full" when no seats remain and a capacity is listed, otherwise "N of M open" (0 while anyone is waiting). A waitlist fact is appended.</summary>
+    [JsonIgnore]
+    public string SeatsLabel
+    {
+        get
+        {
+            var seats = SeatsRemaining <= 0 && SeatCapacity > 0 ? "Full" : $"{OpenSeats} of {SeatCapacity} open";
+            return WaitlistLabel is { } wait ? $"{seats} \u00b7 {wait}" : seats;
+        }
+    }
 
     public bool ConflictsWith(CourseSection other)
     {

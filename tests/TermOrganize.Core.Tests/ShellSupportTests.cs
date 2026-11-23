@@ -54,6 +54,17 @@ public class ShellSupportTests
     }
 
     [Fact]
+    public void CompareStoresTheLiveWaitlistCount()
+    {
+        var item = WatchItem(seats: 2, waitlist: 1);
+        item.LastWaitlistCount = 4;
+        var section = Section(0, waitlist: 2);
+        section.WaitlistCount = 9;
+        var outcome = WatchlistCheck.Compare([item], Live(section), Now);
+        Assert.Equal(9, Assert.Single(outcome.Items).LastWaitlistCount);
+    }
+
+    [Fact]
     public void TermsThatWereNotCheckedStayUntouched()
     {
         var other = WatchItem(seats: 0, term: "202730");

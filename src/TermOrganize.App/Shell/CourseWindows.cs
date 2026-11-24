@@ -113,6 +113,7 @@ internal static class CourseDetail
         host.Children.Add(sections);
         if (!allowLiveRefresh) return;
         var needsDetails = !course.DetailsLoaded
+            || !course.DescriptionLoaded
             || string.IsNullOrWhiteSpace(course.Description)
             || index.Sections(key).Any(section => section.Instructors is null)
             || index.Sections(key).Any(section => section.Restrictions is null)
@@ -214,7 +215,7 @@ internal static class CourseDetail
     {
         if (session.Index is null) return;
         var changed = false;
-        if ((!course.DetailsLoaded || string.IsNullOrWhiteSpace(course.Description)) && crn is not null)
+        if ((!course.DetailsLoaded || !course.DescriptionLoaded || string.IsNullOrWhiteSpace(course.Description)) && crn is not null)
         {
             var detailed = await BannerClient.Shared.FetchCourseDetailsAsync(
                 term,

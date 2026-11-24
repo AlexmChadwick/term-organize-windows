@@ -23,6 +23,7 @@ public sealed class Course
     public string? College { get; set; }
     public string? Department { get; set; }
     public bool DetailsLoaded { get; set; }
+    public bool DescriptionLoaded { get; set; }
 
     /// <summary>
     /// True when the course details were loaded and they list no prerequisites.

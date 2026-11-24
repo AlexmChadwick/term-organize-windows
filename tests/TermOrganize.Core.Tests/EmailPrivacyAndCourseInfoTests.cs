@@ -169,7 +169,8 @@ public class EmailPrivacyAndCourseInfoTests
         var course = new Course { Subject = "CS", Number = "3000", Title = "Original title" };
         var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
 
-        Assert.False(updated.DetailsLoaded);
+        Assert.True(updated.DetailsLoaded);
+        Assert.False(updated.DescriptionLoaded);
         Assert.Equal("Algorithms and Data", updated.Title);
         Assert.Equal(Requisite.Course(new CourseKey("CS", "2510")), updated.Prereqs);
         Assert.Equal(Requisite.Course(new CourseKey("CS", "3001")), updated.Coreqs);
@@ -184,7 +185,8 @@ public class EmailPrivacyAndCourseInfoTests
         var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
         var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
 
-        Assert.False(updated.DetailsLoaded);
+        Assert.True(updated.DetailsLoaded);
+        Assert.False(updated.DescriptionLoaded);
         Assert.Equal("Earlier description.", updated.Description);
         Assert.Equal("Algorithms and Data", updated.Title);
     }
@@ -197,6 +199,7 @@ public class EmailPrivacyAndCourseInfoTests
         var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
 
         Assert.True(updated.DetailsLoaded);
+        Assert.True(updated.DescriptionLoaded);
         Assert.Equal("Earlier description.", updated.Description);
         Assert.Equal("Algorithms and Data", updated.Title);
     }
@@ -209,30 +212,35 @@ public class EmailPrivacyAndCourseInfoTests
         var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
 
         Assert.True(updated.DetailsLoaded);
+        Assert.True(updated.DescriptionLoaded);
         Assert.Equal("Earlier description.", updated.Description);
         Assert.Equal("Algorithms and Data", updated.Title);
     }
 
     [Fact]
-    public async Task FailedFetchLeavesDetailsLoadedFalseAndLaterSuccessfulFetchFillsIt()
+    public async Task FailedFetchLeavesDescriptionLoadedFalseAndLaterSuccessfulFetchFillsIt()
     {
         using var failingClient = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
         var target = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Borrowed from 202630" };
         var failed = await failingClient.FetchCourseDetailsAsync("202710", "99999", target, await Subjects(default));
 
-        Assert.False(failed.DetailsLoaded);
+        Assert.True(failed.DetailsLoaded);
+        Assert.False(failed.DescriptionLoaded);
         Assert.Equal("Borrowed from 202630", failed.Description);
         CatalogBuilder.ApplyCourseDetails(target, failed);
-        Assert.False(target.DetailsLoaded);
+        Assert.True(target.DetailsLoaded);
+        Assert.False(target.DescriptionLoaded);
         Assert.Equal("Borrowed from 202630", target.Description);
 
         using var succeedingClient = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.OK), maxAttempts: 1);
         var filled = await succeedingClient.FetchCourseDetailsAsync("202710", "99999", target, await Subjects(default));
 
         Assert.True(filled.DetailsLoaded);
+        Assert.True(filled.DescriptionLoaded);
         Assert.Equal("Design and analysis of algorithms.", filled.Description);
         CatalogBuilder.ApplyCourseDetails(target, filled);
         Assert.True(target.DetailsLoaded);
+        Assert.True(target.DescriptionLoaded);
         Assert.Equal("Design and analysis of algorithms.", target.Description);
     }
 
@@ -243,9 +251,36 @@ public class EmailPrivacyAndCourseInfoTests
         var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
         var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
 
-        Assert.False(updated.DetailsLoaded);
+        Assert.True(updated.DetailsLoaded);
+        Assert.False(updated.DescriptionLoaded);
         Assert.Equal("Earlier description.", updated.Description);
         Assert.Equal("Algorithms and Data", updated.Title);
+    }
+
+    [Fact]
+    public async Task DescriptionFailureKeepsDetailsLoadedTrueSoPrereqGatesRecognizeRequisites()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
+        var target = new Course { Subject = "CS", Number = "3000", Title = "Original title" };
+        var detailed = await client.FetchCourseDetailsAsync("202710", "99999", target, await Subjects(default));
+        CatalogBuilder.ApplyCourseDetails(target, detailed);
+
+        Assert.True(target.DetailsLoaded);
+        Assert.False(target.DescriptionLoaded);
+        Assert.False(target.HasNoPrerequisites);
+        Assert.False(target.HasNoCorequisites);
+
+        // Prereq gates depend on DetailsLoaded:
+        // 1. Degree Analysis Status sees known requisites (Missing CS 2510, since not taken) rather than Unknown
+        var plan = new DegreePlan();
+        var catalog = CatalogIndex.Build(new TermCatalog { Term = new Term("202710", "Fall 2026"), Courses = [target] });
+        var status = DegreePlanAnalysis.ForCourse(new CourseKey("CS", "3000"), 0, plan, catalog);
+        Assert.NotEqual(DegreePlanAnalysis.PrerequisiteStatus.Unknown, status);
+        Assert.True(status.IsMissing);
+
+        // 2. DegreePlanCatalogSnapshot IndexContaining finds the index with loaded requisites
+        var snapshot = new DegreePlanCatalogSnapshot([catalog], [catalog.Term], "202710");
+        Assert.Same(catalog, snapshot.IndexContaining(new CourseKey("CS", "3000")));
     }
 
     [Fact]

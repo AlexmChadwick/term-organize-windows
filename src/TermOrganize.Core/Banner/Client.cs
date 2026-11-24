@@ -375,7 +375,8 @@ public sealed class BannerClient : IDisposable
         if (details.Title.NilIfBlank() is string title && !course.SpecialTopics) updated.Title = title;
         updated.College = details.College ?? updated.College;
         updated.Department = details.Department ?? updated.Department;
-        updated.DetailsLoaded = descriptionTask.Result is not null;
+        updated.DetailsLoaded = true;
+        updated.DescriptionLoaded = descriptionTask.Result is not null;
         return updated;
 
         async Task<string?> FetchOptionalDescriptionAsync()
@@ -716,5 +717,6 @@ public sealed class BannerClient : IDisposable
         College = course.College,
         Department = course.Department,
         DetailsLoaded = course.DetailsLoaded,
+        DescriptionLoaded = course.DescriptionLoaded,
     };
 }

@@ -21,7 +21,7 @@ jobs:
           dotnet-version: 9.0.x
 
       - name: Test the core library
-        run: dotnet test tests/TermOrganize.Core.Tests/TermOrganize.Core.Tests.csproj -c Release --nologo
+        run: dotnet test tests/TermOrganize.Core.Tests/TermOrganize.Core.Tests.csproj -c Release --nologo --filter "Category!=LiveBanner"
 
   package:
     runs-on: windows-latest

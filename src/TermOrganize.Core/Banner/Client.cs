@@ -365,16 +365,17 @@ public sealed class BannerClient : IDisposable
         var prereqTask = FetchPrerequisitesHtmlAsync(term, crn, cancellationToken);
         var coreqTask = FetchCorequisitesHtmlAsync(term, crn, cancellationToken);
         var detailsTask = FetchCatalogDetailsHtmlAsync(term, crn, cancellationToken);
-        await Task.WhenAll(descriptionTask, prereqTask, coreqTask, detailsTask).ConfigureAwait(false);
+        await Task.WhenAll((Task)descriptionTask, prereqTask, coreqTask, detailsTask).ConfigureAwait(false);
         var updated = Copy(course);
-        updated.Description = descriptionTask.Result;
+        // A failed fetch yields null; keep what the course already had.
+        updated.Description = (descriptionTask.Result.NilIfBlank() ?? course.Description.NilIfBlank())!;
         updated.Prereqs = BannerParsers.Prerequisites(prereqTask.Result, subjects);
         updated.Coreqs = BannerParsers.Corequisites(coreqTask.Result, subjects);
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);
         if (details.Title.NilIfBlank() is string title && !course.SpecialTopics) updated.Title = title;
         updated.College = details.College ?? updated.College;
         updated.Department = details.Department ?? updated.Department;
-        updated.DetailsLoaded = true;
+        updated.DetailsLoaded = descriptionTask.Result is not null;
         return updated;
 
         async Task<string?> FetchOptionalDescriptionAsync()
@@ -383,8 +384,9 @@ public sealed class BannerClient : IDisposable
             {
                 return BannerParsers.Description(await FetchDescriptionHtmlAsync(term, crn, cancellationToken).ConfigureAwait(false));
             }
-            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
+                System.Diagnostics.Debug.WriteLine($"Failed to fetch course description for term {term} CRN {crn}: {ex.Message}");
                 return null;
             }
         }

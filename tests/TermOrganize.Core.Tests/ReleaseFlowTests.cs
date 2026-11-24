@@ -114,6 +114,16 @@ public class ReleaseFlowTests
     }
 
     [Fact]
+    public void CourseDetailsKeepThePreviousDescriptionWhenTheFetchHadNone()
+    {
+        var target = new Course { Subject = "CS", Number = "2500", Title = "Stub", Description = "Earlier description." };
+        var detailed = new Course { Subject = "CS", Number = "2500", Title = "Fundamentals of Computer Science 1", Description = "", DetailsLoaded = true };
+        CatalogBuilder.ApplyCourseDetails(target, detailed);
+        Assert.Equal("Earlier description.", target.Description);
+        Assert.True(target.DetailsLoaded);
+    }
+
+    [Fact]
     public void CourseDetailsFillABlankDescription()
     {
         var target = new Course { Subject = "CS", Number = "2500", Title = "Stub", Description = "" };
@@ -124,6 +134,7 @@ public class ReleaseFlowTests
             Title = "Fundamentals of Computer Science 1",
             Description = "Discrete structures, programs, and the memory model.",
             College = "Khoury",
+            DetailsLoaded = true,
         };
         CatalogBuilder.ApplyCourseDetails(target, detailed);
         Assert.Equal("Discrete structures, programs, and the memory model.", target.Description);

@@ -59,8 +59,10 @@ public class UserDataStoreTests
 public class BannerSmokeTests
 {
     [Fact]
+    [Trait("Category", "LiveBanner")]
     public async Task LiveBannerListsFall2026()
     {
+        if (Environment.GetEnvironmentVariable("TERMORGANIZE_LIVE_BANNER") != "1") return;
         var terms = await BannerTermList.FetchAsync();
         Assert.Contains(terms, term => term.Code == "202710" && term.Name.Contains("Fall 2026"));
     }

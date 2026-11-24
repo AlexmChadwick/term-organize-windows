@@ -266,12 +266,12 @@ public static class CatalogBuilder
     /// <summary>Copies a live description and requisites onto the catalog course the page is showing.</summary>
     public static void ApplyCourseDetails(Course target, Course detailed)
     {
-        target.Description = detailed.Description;
+        target.Description = detailed.Description.NilIfBlank() ?? target.Description;
         target.Prereqs = detailed.Prereqs;
         target.Coreqs = detailed.Coreqs;
         if (!target.SpecialTopics && !string.IsNullOrWhiteSpace(detailed.Title)) target.Title = detailed.Title;
         target.College = detailed.College ?? target.College;
         target.Department = detailed.Department ?? target.Department;
-        target.DetailsLoaded = true;
+        target.DetailsLoaded = detailed.DetailsLoaded;
     }
 }

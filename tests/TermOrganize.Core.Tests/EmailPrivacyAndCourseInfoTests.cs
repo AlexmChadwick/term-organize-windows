@@ -169,11 +169,95 @@ public class EmailPrivacyAndCourseInfoTests
         var course = new Course { Subject = "CS", Number = "3000", Title = "Original title" };
         var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
 
-        Assert.True(updated.DetailsLoaded);
+        Assert.False(updated.DetailsLoaded);
         Assert.Equal("Algorithms and Data", updated.Title);
         Assert.Equal(Requisite.Course(new CourseKey("CS", "2510")), updated.Prereqs);
         Assert.Equal(Requisite.Course(new CourseKey("CS", "3001")), updated.Coreqs);
         Assert.Null(updated.Description);
+    }
+
+    [Fact]
+    public async Task SectionDetailsKeepThePreviousDescriptionWhenTheFetchFails()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
+        var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
+
+        Assert.False(updated.DetailsLoaded);
+        Assert.Equal("Earlier description.", updated.Description);
+        Assert.Equal("Algorithms and Data", updated.Title);
+    }
+
+    [Fact]
+    public async Task SectionDetailsKeepThePreviousDescriptionWhenTheFetchReturnsBlank()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionBody: ""), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
+        var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
+
+        Assert.True(updated.DetailsLoaded);
+        Assert.Equal("Earlier description.", updated.Description);
+        Assert.Equal("Algorithms and Data", updated.Title);
+    }
+
+    [Fact]
+    public async Task SectionDetailsKeepThePreviousDescriptionWhenTheFetchReturnsWhitespace()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionBody: "<section>   \r\n\t  </section>"), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
+        var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
+
+        Assert.True(updated.DetailsLoaded);
+        Assert.Equal("Earlier description.", updated.Description);
+        Assert.Equal("Algorithms and Data", updated.Title);
+    }
+
+    [Fact]
+    public async Task FailedFetchLeavesDetailsLoadedFalseAndLaterSuccessfulFetchFillsIt()
+    {
+        using var failingClient = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
+        var target = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Borrowed from 202630" };
+        var failed = await failingClient.FetchCourseDetailsAsync("202710", "99999", target, await Subjects(default));
+
+        Assert.False(failed.DetailsLoaded);
+        Assert.Equal("Borrowed from 202630", failed.Description);
+        CatalogBuilder.ApplyCourseDetails(target, failed);
+        Assert.False(target.DetailsLoaded);
+        Assert.Equal("Borrowed from 202630", target.Description);
+
+        using var succeedingClient = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.OK), maxAttempts: 1);
+        var filled = await succeedingClient.FetchCourseDetailsAsync("202710", "99999", target, await Subjects(default));
+
+        Assert.True(filled.DetailsLoaded);
+        Assert.Equal("Design and analysis of algorithms.", filled.Description);
+        CatalogBuilder.ApplyCourseDetails(target, filled);
+        Assert.True(target.DetailsLoaded);
+        Assert.Equal("Design and analysis of algorithms.", target.Description);
+    }
+
+    [Fact]
+    public async Task FetchCourseDetailsKeepsPreviousDescriptionWhenDescriptionTimesOut()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionException: new TaskCanceledException("Timeout")), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
+        var updated = await client.FetchCourseDetailsAsync("202710", "99999", course, await Subjects(default));
+
+        Assert.False(updated.DetailsLoaded);
+        Assert.Equal("Earlier description.", updated.Description);
+        Assert.Equal("Algorithms and Data", updated.Title);
+    }
+
+    [Fact]
+    public async Task FetchCourseDetailsPropagatesCallerCancellation()
+    {
+        using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.OK), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
+        var subjects = await Subjects(default);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            client.FetchCourseDetailsAsync("202710", "99999", course, subjects, cts.Token));
     }
 
     [Fact]
@@ -299,13 +383,23 @@ public class EmailPrivacyAndCourseInfoTests
     private static string Temp() => Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "nto-" + Guid.NewGuid().ToString("N"))).FullName;
 
     /// <summary>Answers Banner's course-catalog and search endpoints from memory.</summary>
-    private sealed class CourseHandler(HttpStatusCode descriptionStatus, HttpStatusCode prerequisitesStatus = HttpStatusCode.OK) : HttpMessageHandler
+    private sealed class CourseHandler(
+        HttpStatusCode descriptionStatus = HttpStatusCode.OK,
+        HttpStatusCode prerequisitesStatus = HttpStatusCode.OK,
+        string descriptionBody = "<section>Design and analysis of algorithms.</section>",
+        Exception? descriptionException = null) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (cancellationToken.IsCancellationRequested)
+                return Task.FromCanceled<HttpResponseMessage>(cancellationToken);
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("getCourseDescription", StringComparison.Ordinal))
-                return Task.FromResult(Reply(descriptionStatus, "<section>Design and analysis of algorithms.</section>"));
+            {
+                if (descriptionException is not null)
+                    return Task.FromException<HttpResponseMessage>(descriptionException);
+                return Task.FromResult(Reply(descriptionStatus, descriptionBody));
+            }
             if (path.EndsWith("/getPrerequisites", StringComparison.Ordinal)
                 || path.EndsWith("/getSectionPrerequisites", StringComparison.Ordinal))
                 return Task.FromResult(Reply(prerequisitesStatus,

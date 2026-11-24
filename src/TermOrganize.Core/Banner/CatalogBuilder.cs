@@ -132,6 +132,7 @@ public static class CatalogBuilder
                     Postreqs = [],
                     SpecialTopics = special,
                     DetailsLoaded = false,
+                    DescriptionLoaded = false,
                 };
                 order.Add(key);
             }
@@ -273,5 +274,6 @@ public static class CatalogBuilder
         target.College = detailed.College ?? target.College;
         target.Department = detailed.Department ?? target.Department;
         target.DetailsLoaded = detailed.DetailsLoaded;
+        target.DescriptionLoaded = detailed.DescriptionLoaded;
     }
 }

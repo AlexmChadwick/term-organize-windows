@@ -367,15 +367,16 @@ public sealed class BannerClient : IDisposable
         var detailsTask = FetchCatalogDetailsHtmlAsync(term, crn, cancellationToken);
         await Task.WhenAll((Task)descriptionTask, prereqTask, coreqTask, detailsTask).ConfigureAwait(false);
         var updated = Copy(course);
-        // A failed fetch yields null; keep what the course already had.
-        updated.Description = (descriptionTask.Result.NilIfBlank() ?? course.Description.NilIfBlank())!;
+        // A failed fetch yields null; keep what the course already had, falling back to empty string.
+        updated.Description = descriptionTask.Result.NilIfBlank() ?? course.Description.NilIfBlank() ?? "";
         updated.Prereqs = BannerParsers.Prerequisites(prereqTask.Result, subjects);
         updated.Coreqs = BannerParsers.Corequisites(coreqTask.Result, subjects);
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);
         if (details.Title.NilIfBlank() is string title && !course.SpecialTopics) updated.Title = title;
         updated.College = details.College ?? updated.College;
         updated.Department = details.Department ?? updated.Department;
-        updated.DetailsLoaded = descriptionTask.Result is not null;
+        updated.DetailsLoaded = true;
+        updated.DescriptionLoaded = descriptionTask.Result is not null;
         return updated;
 
         async Task<string?> FetchOptionalDescriptionAsync()
@@ -386,7 +387,7 @@ public sealed class BannerClient : IDisposable
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to fetch course description for term {term} CRN {crn}: {ex.Message}");
+                System.Diagnostics.Trace.TraceWarning($"Failed to fetch course description for term {term} CRN {crn}: {ex.Message}");
                 return null;
             }
         }
@@ -716,5 +717,6 @@ public sealed class BannerClient : IDisposable
         College = course.College,
         Department = course.Department,
         DetailsLoaded = course.DetailsLoaded,
+        DescriptionLoaded = course.DescriptionLoaded,
     };
 }

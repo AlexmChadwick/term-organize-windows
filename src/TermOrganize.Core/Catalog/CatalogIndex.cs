@@ -453,5 +453,6 @@ public sealed class CatalogIndex
         College = course.College,
         Department = course.Department,
         DetailsLoaded = course.DetailsLoaded,
+        DescriptionLoaded = course.DescriptionLoaded,
     };
 }

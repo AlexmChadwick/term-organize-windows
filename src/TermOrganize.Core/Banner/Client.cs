@@ -367,8 +367,8 @@ public sealed class BannerClient : IDisposable
         var detailsTask = FetchCatalogDetailsHtmlAsync(term, crn, cancellationToken);
         await Task.WhenAll((Task)descriptionTask, prereqTask, coreqTask, detailsTask).ConfigureAwait(false);
         var updated = Copy(course);
-        // A failed fetch yields null; keep what the course already had.
-        updated.Description = (descriptionTask.Result.NilIfBlank() ?? course.Description.NilIfBlank())!;
+        // A failed fetch yields null; keep what the course already had, falling back to empty string.
+        updated.Description = descriptionTask.Result.NilIfBlank() ?? course.Description.NilIfBlank() ?? "";
         updated.Prereqs = BannerParsers.Prerequisites(prereqTask.Result, subjects);
         updated.Coreqs = BannerParsers.Corequisites(coreqTask.Result, subjects);
         var details = BannerParsers.CatalogDetailsFrom(detailsTask.Result);

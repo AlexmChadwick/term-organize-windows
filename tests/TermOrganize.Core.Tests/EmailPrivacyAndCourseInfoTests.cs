@@ -173,7 +173,8 @@ public class EmailPrivacyAndCourseInfoTests
         Assert.Equal("Algorithms and Data", updated.Title);
         Assert.Equal(Requisite.Course(new CourseKey("CS", "2510")), updated.Prereqs);
         Assert.Equal(Requisite.Course(new CourseKey("CS", "3001")), updated.Coreqs);
-        Assert.Null(updated.Description);
+        Assert.NotNull(updated.Description);
+        Assert.Equal("", updated.Description);
     }
 
     [Fact]

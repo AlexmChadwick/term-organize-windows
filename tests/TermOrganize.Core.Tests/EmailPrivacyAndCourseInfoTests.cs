@@ -262,6 +262,20 @@ public class EmailPrivacyAndCourseInfoTests
     }
 
     [Fact]
+    public async Task FetchCourseDetailsPropagatesCallerCancellationWhenOnlyDescriptionIsCancelled()
+    {
+        using var cts = new CancellationTokenSource();
+        using var client = new BannerClient(new CourseHandler(
+            onDescriptionRequest: () => cts.Cancel(),
+            cancelOnlyDescription: true), maxAttempts: 1);
+        var course = new Course { Subject = "CS", Number = "3000", Title = "Original title", Description = "Earlier description." };
+        var subjects = await Subjects(default);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            client.FetchCourseDetailsAsync("202710", "99999", course, subjects, cts.Token));
+    }
+
+    [Fact]
     public async Task CourseInfoLookupKeepsTitleAndRequisitesWhenOnlyTheDescriptionFails()
     {
         using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
@@ -388,51 +402,71 @@ public class EmailPrivacyAndCourseInfoTests
         HttpStatusCode descriptionStatus = HttpStatusCode.OK,
         HttpStatusCode prerequisitesStatus = HttpStatusCode.OK,
         string descriptionBody = "<section>Design and analysis of algorithms.</section>",
-        Exception? descriptionException = null) : HttpMessageHandler
+        Exception? descriptionException = null,
+        Action? onDescriptionRequest = null,
+        bool cancelOnlyDescription = false) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        private int _otherRequestsCompleted;
+        private readonly TaskCompletionSource _othersDone = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (cancellationToken.IsCancellationRequested)
-                return Task.FromCanceled<HttpResponseMessage>(cancellationToken);
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("getCourseDescription", StringComparison.Ordinal))
             {
+                if (cancelOnlyDescription)
+                {
+                    await _othersDone.Task.ConfigureAwait(false);
+                }
+                onDescriptionRequest?.Invoke();
+                if (cancellationToken.IsCancellationRequested)
+                    return await Task.FromCanceled<HttpResponseMessage>(cancellationToken).ConfigureAwait(false);
                 if (descriptionException is not null)
-                    return Task.FromException<HttpResponseMessage>(descriptionException);
-                return Task.FromResult(Reply(descriptionStatus, descriptionBody));
+                    return await Task.FromException<HttpResponseMessage>(descriptionException).ConfigureAwait(false);
+                return Reply(descriptionStatus, descriptionBody);
             }
+            if (!cancelOnlyDescription && cancellationToken.IsCancellationRequested)
+                return await Task.FromCanceled<HttpResponseMessage>(cancellationToken).ConfigureAwait(false);
+
+            HttpResponseMessage response;
             if (path.EndsWith("/getPrerequisites", StringComparison.Ordinal)
                 || path.EndsWith("/getSectionPrerequisites", StringComparison.Ordinal))
-                return Task.FromResult(Reply(prerequisitesStatus,
+                response = Reply(prerequisitesStatus,
                     "<section><table class=\"basePreqTable\"><thead><tr><th>And/Or</th></tr></thead><tbody>"
                     + "<tr><td></td><td></td><td></td><td></td><td>Computer Science</td><td>2510</td><td>Undergraduate</td><td>D-</td><td></td></tr>"
-                    + "</tbody></table></section>"));
-            if (path.EndsWith("getCorequisites", StringComparison.Ordinal))
-                return Task.FromResult(Reply(HttpStatusCode.OK,
+                    + "</tbody></table></section>");
+            else if (path.EndsWith("getCorequisites", StringComparison.Ordinal))
+                response = Reply(HttpStatusCode.OK,
                     "<section><table class=\"basePreqTable\"><thead><tr><th>Subject</th></tr></thead><tbody>"
-                    + "<tr><td>Computer Science</td><td>3001</td><td>Recitation</td></tr></tbody></table></section>"));
-            if (path.EndsWith("getCourseMutuallyExclusions", StringComparison.Ordinal))
-                return Task.FromResult(Reply(HttpStatusCode.OK, "<section>No Mutual Exclusion information available.</section>"));
-            if (path.EndsWith("/getCourseCatalogDetails", StringComparison.Ordinal)
+                    + "<tr><td>Computer Science</td><td>3001</td><td>Recitation</td></tr></tbody></table></section>");
+            else if (path.EndsWith("getCourseMutuallyExclusions", StringComparison.Ordinal))
+                response = Reply(HttpStatusCode.OK, "<section>No Mutual Exclusion information available.</section>");
+            else if (path.EndsWith("/getCourseCatalogDetails", StringComparison.Ordinal)
                 || path.EndsWith("/getSectionCatalogDetails", StringComparison.Ordinal))
-                return Task.FromResult(Reply(HttpStatusCode.OK,
+                response = Reply(HttpStatusCode.OK,
                     "<section><span class=\"status-bold\">Title:</span>Algorithms and Data<br/>"
-                    + "<span class=\"status-bold\">Credit Hours:</span> 4.000<br/></section>"));
-            if (path.EndsWith("get_subjectcoursecombo", StringComparison.Ordinal))
-                return Task.FromResult(Reply(HttpStatusCode.OK, "[{\"code\":\"CS3000\",\"description\":\"Algorithms and Data\"}]"));
-            if (path.EndsWith("term/search", StringComparison.Ordinal))
+                    + "<span class=\"status-bold\">Credit Hours:</span> 4.000<br/></section>");
+            else if (path.EndsWith("get_subjectcoursecombo", StringComparison.Ordinal))
+                response = Reply(HttpStatusCode.OK, "[{\"code\":\"CS3000\",\"description\":\"Algorithms and Data\"}]");
+            else if (path.EndsWith("term/search", StringComparison.Ordinal))
             {
-                var response = Reply(HttpStatusCode.OK, "{}");
+                response = Reply(HttpStatusCode.OK, "{}");
                 response.Headers.TryAddWithoutValidation("Set-Cookie", "JSESSIONID=abc123; Path=/; HttpOnly");
-                return Task.FromResult(response);
             }
-            if (path.EndsWith("searchResults/searchResults", StringComparison.Ordinal))
-                return Task.FromResult(Reply(HttpStatusCode.OK,
+            else if (path.EndsWith("searchResults/searchResults", StringComparison.Ordinal))
+                response = Reply(HttpStatusCode.OK,
                     "{\"success\":true,\"totalCount\":1,\"data\":[{\"courseReferenceNumber\":\"99999\",\"subject\":\"CS\",\"courseNumber\":\"3000\","
-                    + "\"sequenceNumber\":\"01\",\"courseTitle\":\"Algorithms and Data\",\"creditHours\":4}]}"));
-            if (path.Contains("get_", StringComparison.Ordinal))
-                return Task.FromResult(Reply(HttpStatusCode.OK, "[]"));
-            return Task.FromResult(Reply(HttpStatusCode.NotFound, ""));
+                    + "\"sequenceNumber\":\"01\",\"courseTitle\":\"Algorithms and Data\",\"creditHours\":4}]}");
+            else if (path.Contains("get_", StringComparison.Ordinal))
+                response = Reply(HttpStatusCode.OK, "[]");
+            else
+                response = Reply(HttpStatusCode.NotFound, "");
+
+            if (cancelOnlyDescription && Interlocked.Increment(ref _otherRequestsCompleted) == 3)
+            {
+                _othersDone.TrySetResult();
+            }
+            return response;
         }
 
         private static HttpResponseMessage Reply(HttpStatusCode status, string body) =>

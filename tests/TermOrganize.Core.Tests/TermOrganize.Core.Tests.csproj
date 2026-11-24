@@ -15,6 +15,10 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The app does not ship term-202730.catalog; the LZFSE tests need it next to the test binaries. -->
+    <None Include="..\..\src\TermOrganize.Core\Catalog\term-202730.catalog" Link="Catalog\term-202730.catalog" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\TermOrganize.Core\TermOrganize.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -257,6 +257,28 @@ public class EmailPrivacyAndCourseInfoTests
         Assert.Equal("Algorithms and Data", updated.Title);
     }
 
+    private sealed class CaptureListener : System.Diagnostics.TraceListener
+    {
+        public List<string> Messages { get; } = [];
+        public override void Write(string? message) { if (message is not null) Messages.Add(message); }
+        public override void WriteLine(string? message) { if (message is not null) Messages.Add(message); }
+    }
+
+    [Fact]
+    public async Task DescriptionFetchFailureIsTracedSoReleaseBuildsKeepTheDiagnostic()
+    {
+        var listener = new CaptureListener();
+        System.Diagnostics.Trace.Listeners.Add(listener);
+        try
+        {
+            using var client = new BannerClient(new CourseHandler(descriptionStatus: HttpStatusCode.InternalServerError), maxAttempts: 1);
+            await client.FetchCourseDetailsAsync("202710", "99999", new Course { Subject = "CS", Number = "3000", Title = "T" }, await Subjects(default));
+        }
+        finally { System.Diagnostics.Trace.Listeners.Remove(listener); }
+
+        Assert.Contains(listener.Messages, message => message.Contains("Failed to fetch course description") && message.Contains("99999"));
+    }
+
     [Fact]
     public async Task DescriptionFailureKeepsDetailsLoadedTrueSoPrereqGatesRecognizeRequisites()
     {

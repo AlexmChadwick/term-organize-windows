@@ -387,7 +387,7 @@ public sealed class BannerClient : IDisposable
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to fetch course description for term {term} CRN {crn}: {ex.Message}");
+                System.Diagnostics.Trace.TraceWarning($"Failed to fetch course description for term {term} CRN {crn}: {ex.Message}");
                 return null;
             }
         }

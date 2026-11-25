@@ -206,6 +206,45 @@ public sealed class CatalogToolTests
     }
 
     [Fact]
+    public void ReorganizeIgnoresPrerequisitesFromUnloadedDetails()
+    {
+        var library = new CatalogLibrary();
+        var index = library.ByCode.Values.First();
+        var course = index.Courses.First(item =>
+            library.OfferedIn(index, item.Key)
+            && library.ByCode.Values.All(other => other == index || other.Course(item.Key) is null));
+        var prerequisite = index.Courses.First(item => item.Key != course.Key && library.OfferedIn(index, item.Key));
+        course.Prereqs = Requisite.Course(prerequisite.Key);
+        course.DetailsLoaded = false;
+        prerequisite.Prereqs = null;
+        prerequisite.DetailsLoaded = true;
+        var plan = new DegreePlan
+        {
+            Terms =
+            [
+                new DegreePlanTerm
+                {
+                    Season = PlanSeasonInfo.FromTerm(index.Term.Season),
+                    Year = index.Term.CalendarYear,
+                    Courses =
+                    [
+                        new DegreePlanCourse(course.Key, course.Title, 4),
+                        new DegreePlanCourse(prerequisite.Key, prerequisite.Title, 4),
+                    ],
+                },
+            ],
+        };
+
+        var unloaded = PlanReorganizer.Reorganize(plan, library);
+        Assert.Empty(unloaded.Unresolved);
+
+        course.DetailsLoaded = true;
+        var loaded = PlanReorganizer.Reorganize(plan, library);
+        Assert.Contains(loaded.Unresolved, item =>
+            Equals(item["subject"], course.Subject) && Equals(item["number"], course.Number));
+    }
+
+    [Fact]
     public void ReorganizeMovesACourseThatIsNotOffered()
     {
         var sample = SharedCatalog.SpringOnly;

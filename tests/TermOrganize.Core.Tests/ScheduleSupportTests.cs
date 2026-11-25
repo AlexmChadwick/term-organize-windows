@@ -384,6 +384,34 @@ public class ScheduleSupportTests
     }
 
     [Fact]
+    public void ReorderingTreatsUnloadedPrerequisitesAsUnknown()
+    {
+        var course = SupportFixture.Course("CS", "3000");
+        course.DetailsLoaded = false;
+        var index = SupportFixture.Index([course],
+            [SupportFixture.Section("10001", course.Subject, course.Number, [0], 9, 10)]);
+        var plan = new DegreePlan
+        {
+            Terms =
+            [
+                new DegreePlanTerm
+                {
+                    Season = PlanSeason.Fall,
+                    Year = 2026,
+                    Courses = [new DegreePlanCourse(course.Key, course.Title, 4)],
+                },
+                new DegreePlanTerm { Season = PlanSeason.Fall, Year = 2027 },
+            ],
+        };
+
+        var result = ScheduleReorderSuggestions.Load([course.Key], plan, index.Term, [index]);
+
+        var move = Assert.Single(result.Options, option => !option.AddsSemester);
+        Assert.Equal(course.Key, Assert.Single(move.MovedAway));
+        Assert.Contains("Prerequisites couldn\u2019t be checked", move.Reasons);
+    }
+
+    [Fact]
     public void ReorderingTheDegreePlanNeedsASemesterThatMatchesTheTerm()
     {
         var plan = SupportFixture.Plan(["CS 3000"]);
